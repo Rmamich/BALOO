@@ -1,0 +1,65 @@
+function [dkp1plus, Lambdakp1plus] = recursiveLS_psd_information_page(H, b, dkplus, Lambdakplus, QWinv, RWinv, beta, dt)
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Purpose: Implements recursive LS to estimate the full discrete time
+% process noise matrix
+%
+% Inputs: 
+%   H               Mapping matrix from sqrt of continuious process 
+%                       noise vector to autocovariance space 
+%   b               Autocovariance "measuremets" 
+%   dkplus          information version of Previous time's estimate of 
+%                       sqrt(proces noise psd)
+%   Lambdakplus     Previous time's covariance matrix around noise matrix
+%                       estimate
+%   QWinv           inverted process noise on LS
+%   RWinv           inverted Variance in each of the measurements
+% 
+% Outputs:
+%   dkp1plus        updated information state of sqrt(q)
+%   Lambdakp1plus   information on estimate
+% 
+% Author: Rachel Mamich 
+% Date Created: 09/08/23
+% Date Modified: 04/08/25
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+[n, ~, n_nodes] = size(dkplus);
+[p, ~, ~] = size(b);
+
+eye_nxnxn_nodes = repmat(eye(n), 1, 1, n_ndoes);
+
+if beta ~=0 % Have NOT checked 
+    F = expm(-beta*eye_nxnxn_nodes*dt);
+    Finv = pagemldivide(F, eye(3));
+    A = pagemtimes(Finv, pagemtimes(Lambdakplus, 'none', Finv, 'transpose'));
+    ApQinv_INV = pagemldivide((A + QWinv), eye(n));
+    eyemAApQinv_INV = (eye_nxnxn_nodes - pagemtimes(A, ApQinv_INV));
+    Lambdakp1minus = pagemtimes(eyemAApQinv_INV, A);
+    dkp1minus = pagemtimes(eyemAApQinv_INV, pagemtimes(Finv, 'transpose', dkplus, 'none'));
+else 
+    A = Lambdakplus;
+    ApQinv_INV = pagemldivide((A + QWinv), eye(n));
+    eyemAApQinv_INV = (eye_nxnxn_nodes - pagemtimes(A, ApQinv_INV));
+    Lambdakp1minus = pagemtimes(eyemAApQinv_INV, A);
+    dkp1minus = pagemtimes(eyemAApQinv_INV, dkplus);
+end
+
+if length(RWinv) == 1
+    Rinv = RWinv*repmat(eye(p), 1, 1, n_nodes);
+else
+    Rinv = RWinv;
+end
+
+dkp1plus = dkp1minus + H'*Rinv*b;
+Lambdakp1plus = Lambdakp1minus + H'*Rinv*H;
+
+
+Pqkplus = Lambdakplus\eye(3);
+qkplus = Pqkplus*dkplus;
+% %TODO: reset this
+% 
+% Lambdakp1plus = Lambdakplus;
+% dkplus = Lambdakp1plus*qkplus;
+
+
+end

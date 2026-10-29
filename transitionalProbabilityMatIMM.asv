@@ -1,0 +1,20 @@
+function [transitionProbMat] = transitionalProbabilityMatIMM(n_nodes)
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Purpose: Creates a transitional probability matrix for use in an
+% interacting multiple model filter (IMM) 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+if n_nodes >1
+    diagValues = 2/3;
+    otherValues = (1-diagValues)/(n_nodes-1);
+    transitionProbMat = ones(n_nodes)*otherValues;
+
+    idxMat = reshape(1:(n_nodes^2), n_nodes, n_nodes);
+    idxDiag = diag(idxMat);
+
+    transitionProbMat(idxDiag) = transitionProbMat(idxDiag)/otherValues*diagValues;
+else
+    transitionProbMat = 1;
+end
+
+end

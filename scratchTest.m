@@ -1,0 +1,179 @@
+%% Scratch script to test reshaping H
+
+% m = 3;
+% n = 3;
+% n_nodes = 3;
+% bufferSize = 4;
+% 
+% 
+% 
+% H = ones(m*(bufferSize+1), n, n_nodes);
+% F = repmat(rotx(30), 1, 1, 3, bufferSize);
+% 
+% [A, B, Mw] = constructAB_page(F, H, bufferSize);
+
+
+% for i = 1:(bufferSize+1)
+%     for j = 1:n_nodes
+%         H(:, 1+n*(i-1):(i*n), j) = i*j;
+%     end
+%     if i <= bufferSize
+%         Phi(1+n*(i-1):(i*n), :) = i;
+%     end
+% end
+% 
+% H = H(:, :, 1);
+% 
+% H(:, 1:(n*bufferSize))*Phi
+% 
+% H(:, (n+1):end)*Phi
+
+
+%% Mw
+
+
+% Mwjm1_jmbuffp1_test = zeros(m*(bufferSize), (bufferSize-1), n_nodes);
+% 
+% 
+% for kk = 1:(bufferSize-1)
+%     Phi_temp = eye_nxnxn_nodes;
+%     for ii = kk:(bufferSize-1)
+%         Mwjm1_jmbuffp1_test(1+(m*(kk-1)):(m*kk), 1+(n*(ii-1)):(n*ii), :) = pagemtimes(H((1+m*(kk-1)):(m*kk), :, :), Phi_temp);
+%         Phi_temp = pagemtimes(Phi_temp,F(:, :, :, ii));
+%     end
+% end
+% 
+% 
+% Mwjm2_jmbuff_test = zeros(m*(bufferSize), (bufferSize-1), n_nodes);
+% for kk = 1:bufferSize
+%     idxH = kk+1;
+%     Phi_temp = eye_nxnxn_nodes;
+%     for ii = kk:(bufferSize-1)
+%         Mwjm2_jmbuff_test(1+(m*(kk-1)):(m*kk), 1+(n*(ii-1)):(n*ii), :) = pagemtimes(H((1+m*(idxH-1)):(m*idxH), :, :), Phi_temp);
+%         Phi_temp = pagemtimes(Phi_temp,F(:, :, :, ii+1));
+%     end
+% end
+% 
+% Mw_test = zeros(m*(bufferSize+1), n*(bufferSize), n_nodes);
+% for kk = 1:bufferSize+2
+%     Phi_temp = eye_nxnxn_nodes;
+%     for ii = kk:(bufferSize)
+%         Mw_test(1+(m*(kk-1)):(m*kk), 1+(n*(ii-1)):(n*ii), :) = pagemtimes(H((1+m*(kk-1)):(m*kk), :, :), Phi_temp);
+%         Phi_temp = pagemtimes(Phi_temp,F(:, :, :, ii));
+%     end
+% end
+
+
+
+%% Working on kronh 
+
+% n = 9;
+% m = 3;
+% n_nodes = 3;
+% 
+% B = 1:(n*m);
+% 
+% B = reshape(B, n, m);
+% 
+% 
+% 
+% X = 1:m^2;
+% X = reshape(X, m, m);
+% X = triu(X');
+% for i = 1:m
+%     for j = 1:m
+%         X(j, i) = X(i, j);
+%     end
+% end
+% 
+% B = repmat(B, 1, 1, n_nodes);
+% 
+% 
+% 
+% X = repmat(X, 1, 1, n_nodes);
+% 
+% % B = sym('B', [9,9], 'real');
+% % X = sym('X', [9,9], 'real');
+% % X = tril(X,0) + tril(X,-1).';
+% 
+% if n_nodes==1
+%     temp1 = vech(B*X*B');
+%     temp2 = kronh(B)*vech(X);
+% 
+% else
+%     temp1 = vech_page(pagemtimes(B, pagemtimes(X, 'none', B, 'transpose')));
+%     temp2 = pagemtimes(kronh_page(B), vech_page(X));
+% end
+
+
+
+
+%% Working on kronu 
+
+% n = 9;
+% m = 3;
+% n_nodes = 1;
+% 
+% B = 1:(n*m);
+% 
+% B = reshape(B, n, m);
+% 
+% 
+% 
+% 
+% 
+% X = 1:m^2;
+% X = reshape(X, m, m);
+% X = triu(X');
+% for i = 1:m
+%     for j = 1:m
+%         X(j, i) = X(i, j);
+%     end
+% end
+% 
+% 
+% B = repmat(B, 1, 1, n_nodes);
+% A = 7*B;
+% 
+% 
+% X = repmat(X, 1, 1, n_nodes);
+% 
+% % B = sym('B', [9,9], 'real');
+% % X = sym('X', [9,9], 'real');
+% 
+% if n_nodes==1
+%     temp1 = A*X*B';
+%     temp1 = temp1(:);
+%     temp2 = kronu(B, A)*vech(X);
+% 
+%     temp3 = kronu(B, A);
+%     temp4 = kronu(A, B);
+% 
+% else
+%     temp1 = pagemtimes(A, pagemtimes(X,'none', B, 'transpose'));
+%     temp1 = reshape(temp1(:), [], 1, n_nodes);
+%     temp2 = pagemtimes(kronu_page(B, A), reshape(vech_page(X), [], 1, n_nodes));
+% end
+
+
+%% Working on kronu 
+
+n = 9;
+m = 3;
+n_nodes = 3;
+
+B = 1:(n*n);
+
+B = reshape(B, n, n);
+
+A = zeros(n, n, n_nodes);
+A(:, :, 1) = B;
+A(:, :, 2) = B*2;
+A(:, :, 3) = B*3;
+
+
+
+temp = bsxfun(@times, eye(size(A(:,:,1))), A);
+temp2 = reshape(temp(temp~=0),  [], 1, n_nodes);
+
+% temp2 = temp2;
