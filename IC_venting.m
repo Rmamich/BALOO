@@ -1,0 +1,200 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Venting Scenario IC Script:
+% Sets flags for the Venting Scenario including tuning parameters
+%
+%
+% Created: 03/07/24
+% Last Modified: 03/07/24
+% Author: Rachel Mamich
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% Flags to Set
+% 'EarthRel_Venting'
+flagFilterType = 'EKF';                            % 'GSKF' : Gaussian Second-order Kalman Filter, 'EKF': Extended Kalman Filter '1stProp2ndMeas': first order prop, 2nd order meas update
+nMC = 1;
+nMCTruth = 100;
+firstPlot = 1;
+plotExclude = []; % 7, 28
+
+
+% Initial covariance study
+flagInitCovStudy = true;                                    % Flag to run an initial covariance study -- vary Chaser init, hold al else the same
+P0Scales = [0, 1e-10, 1e-5, 1e-4, 1e-3, 1e-2, 1e-1, 1];
+P0str = {'zero', '1eneg10', '1eneg5', '1eneg4', '1eneg3', '1eneg2', '1eneg1', 'none'};
+iiP0 = 8;
+if flagInitCovStudy
+    fileBase = fullfile('.', 'MAT', flagScenario, 'InitCovFactor', P0str{iiP0}, flagFilterType);                           % Sets base file path for Figure .mat file read in
+else
+    fileBase = fullfile('.', 'MAT', flagScenario, flagFilterType);                           % Sets base file path for Figure .mat file read in
+end
+
+if flagInitCovStudy
+    n_P0 = length(P0Scales);
+else
+    n_P0 = 0;
+end
+
+
+
+measNum = 3;
+plotCheck = false;
+
+
+
+% Flags for Truth model dynamics
+flagGravModelTruth = 'j2j3j4j5j6On';                        % Sets grav model for truth
+if strcmp(flagFilterType, 'EKF')
+    eomTruth = @tbpJ2_accelerometerGating_rpod_lidarBias;        % Can swap out for different dynamics, but will enforce that EKF prop functions go with EKF and GSKF goes with GSKF
+    if strcmp(flagGravModelTruth, 'j2j3j4j5j6On')
+        eomTruth = @tbpJ2_J6_accelerometerGating_rpod_lidarBias;
+    end
+elseif strcmp(flagFilterType, 'GSKF')
+    eomTruth = @tbpJ2_accelerometerGating_rpod_lidarBias_GSKF;
+elseif strcmp(flagFilterType, '1stProp2ndMeas')
+    eomTruth = @tbpJ2_accelerometerGating_rpod_lidarBias;
+end
+flagTruthNoisyBurn = false;
+
+%% Flags for Filter/MC
+expNum = [0, 12];                                         % Process noise (1e-expNum)
+underweight = 0;                                    % Amount of underweighting -- 0 for no underweighting
+flagUnderweight = 'fixed'; %                           % Falg for underweighting, if fixed, will remain what it is set to, if 'variable' will update due to the convention outlined inUnderweighting Nonlinear Measurements by Zanetti, DeMars, and Bishop, or 'switchOff' to have it switch off after a certain uncertainty
+
+
+flagEstTargetAccel = true;                         % adds acceleration to state when true
+flagEstChaserAccelBias = true;                      % Estimates bias on chaser accelerometer when true
+flagSampleInit = true;                              % Samples from initial distribution when true
+flagGravModel = 'j2j3j4On';                             % Sets gravity model for filter
+flagTruthMeas = false;                              % Passes filter truth measurments when true
+flagBurnOn = true;                                  % Zeros our burn hist when set to false
+flagAccelerometerPerfectMatch = false;               % When false, adds noise to accelermoneter measurement based on VRW
+flagRunMeasUpdate = true;                           % Runs the measurment update when true
+flagQ = 'CorrMethodInf'; %'fixed';% 'CorrMethodInf'  %'CovMatchTrad' %'CorrMethodInf';    % Sets the process noise handling
+adaptBuffer = 30;                                   % If running adaptive process noise, sets buffer size -- helps control how quickly we can adjust -- 20 is good for linear meas
+epsilon_split = Inf;
+epsilon_prune = -Inf;
+flagConsider = [false(1, 3), true(1, 2), false true(1, 1)]; % [false(1, 2), false, false(1, 3)];                         % Sets parameters to be consider parameters when true (lumps all 3 components together (pos, vel, accel) false(6, 1); %
+beta = [0, 1/3600, 0];                            % time constants for Markov Processes (target acceleration, chaser accelerometer, lidar bias)
+bias = [(300*9.81e-6); (300*9.81e-6); (300*9.81e-6)]/100; % initial bias (300*9.81e-6) LN200S
+biasLidar = 0;                                      % Lidar Bias
+gate = 1e-4;
+accelerometerVRW = eye(3)*(35e-6*9.81/100)^2;           % (m/s/srt(s))^2 - VRW^2 -- LN200S for numbers
+flagLidarBias = false;                              % Includes Lidar bias in state space when true
+if contains(flagScenario, 'trueJacobians')
+    flagUseTrueJacobians = true;                       % Debugging flag to give EKF and adaptation true jacobians
+else
+    flagUseTrueJacobians = false;                       % Debugging flag to give EKF and adaptation true jacobians
+end
+
+if flagEstTargetAccel
+    flagNoiseonJerk = true;
+    eom = @tbpJ2_J6_accelerometerGating_rpod_lidarBias;
+else
+    flagNoiseonJerk = false;
+    eom = @tbpJ2_accelerometerGating_rpod_lidarBias;
+end
+
+
+
+P0_1sat = diag([ones(3, 1)*(25/3); ones(3, 1)*(.1); ones(3, 1)*1e-9].^2);
+P0_1satArray = zeros(9, n_P0);
+for ii_P0 = 1:n_P0
+    P0_1satArray(:, ii_P0) = diag(P0_1sat)*P0Scales(ii_P0);
+end
+% P0 = diag([ones(3, 1)*1e3; ones(3, 1)*1; ones(3, 1)*1e-4; ones(3, 1)*1e3; ones(3, 1)*1; ones(3, 1)*1e-4].^2);
+
+% % TODO: I changed this to be sqrt of q
+% Pqkminus0 = eye(3)*1e-8; % May want to come back to this at some point
+% qkminus0 = ones(3, 1)*10^(-expNum(1)/2-10);% ones(3, 1)*Q0(1, 1) + sqrt((Pqkminus*randn(3, 1)).^2);
+% QW = diag([1e7, 1e7, 1e7]); % eye(3)*1e-17*0; good for direct meas wiht direct est of q % diag([1e10, 0, 1e10]) good for nl -- play with this
+% RW = 1e-10; % 1e-9 good for direct meas with direct est of sqrt q at 1e-4 % 1e-5 good for nl meas % 1e-6 good for sqrt q 1e-3 % 1e-5 good for nl
+
+% TODO: I changed this to be sqrt of q
+Pqkminus0 = eye(3)*1e-3; % May want to come back to this at some point
+qkminus0 = ones(3, 1)*10^(-12/2);% ones(3, 1)*Q0(1, 1) + sqrt((Pqkminus*randn(3, 1)).^2);
+QW = diag([1e5, 1e5, 1e5]); % eye(3)*1e-17*0; good for direct meas wiht direct est of q % diag([1e10, 0, 1e10]) good for nl -- play with this
+RW = 1e-9; % 1e-9 good for direct meas with direct est of sqrt q at 1e-4 % 1e-5 good for nl meas % 1e-6 good for sqrt q 1e-3 % 1e-5 good for nl
+
+
+
+if contains(flagQ, 'Inf')
+    Lambda0 = Pqkminus0\eye(3);
+    dk0 = Lambda0*qkminus0;
+    % QW = QW\eye(3);
+    RW = 1/RW;
+end
+
+
+
+n_elm = zeros(2, 1);
+if flagEstTargetAccel
+    n_elm(1) = 9;
+else
+    n_elm(1) = 6;
+end
+
+if flagEstChaserAccelBias
+    n_elm(2) = 9;
+else
+    n_elm(2) = 6;
+end
+
+
+% RW_array = [1e5, 1e8, 1e2]; % good for nl w/ buff of 75 noise on accel
+% RW_array = [1e2, 1e8, 1e-1]; % good for nl w/ buff of 30 noise on accel
+% RW_array = [1e-1, 1e8, 1e-2]; % noise on jerk 75 buffer
+% RW_array = [1e11, 1e11, 1e11];
+RW_array =ones(1, 3)*RW^-1;
+
+RW = eye(adaptBuffer*n_elm(1)^2 + n_elm(1)*(n_elm(1) + 1)/2)*RW;
+
+if n_elm(1) == 6
+    firstIndex = [1, 7, 12; 16, 19, 21];
+    for i = 1:3
+        for k = 1:2
+            RW(firstIndex(k, i), firstIndex(k, i)) = RW_array(i);
+        end
+    end
+
+    xidex = 21 + [1, 22]';
+    yidex = 21 + [8, 29]';
+    zidex = 21 + [15, 36]';
+    xyzIndex = [xidex, yidex, zidex];
+    for i = 1:adaptBuffer
+        for j = 1:3 % column
+            for k = 1:2 % row
+                RW(xyzIndex(k, j), xyzIndex(k, j)) = RW_array(j);
+            end
+        end
+        xyzIndex = xyzIndex + 81;
+    end
+elseif n_elm(1) == 9
+    firstIndex = [1, 10, 18;... % x, y, z
+        25, 31, 36;... % x, y, z
+        40, 43, 45];  % x, y, z
+    for j = 1:3
+        for k = 1:3
+            RW(firstIndex(k, j), firstIndex(k, j)) = RW_array(j);
+        end
+    end
+
+    xidex = 45 + [1, 31, 61]';
+    yidex = 45 + [11, 41, 71]';
+    zidex = 45 + [21, 51, 81]';
+    xyzIndex = [xidex, yidex, zidex];
+    for i = 1:adaptBuffer
+        for j = 1:3 % column
+            for k = 1:3 % row
+                RW(xyzIndex(k, j), xyzIndex(k, j)) = RW_array(j);
+            end
+        end
+        xyzIndex = xyzIndex + 81;
+    end
+end
+
+
+
+
+if flagInitCovStudy
+    P0_1sat = P0_1sat*P0Scales(iiP0);
+end
+

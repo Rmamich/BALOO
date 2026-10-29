@@ -1,0 +1,1255 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Plot MC
+%
+%
+% Created: 10/12/22
+% Last Modified: 12/19/22
+% Author: Rachel Mamich
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%house keeping
+if ~exist('flagSetFlags', 'var')
+    clear
+    close all
+
+    expNum = 14;
+    nMC = 100;
+
+    saveFig = true;                                   % Saves plots when true
+    % baseFilepath = fullfile('.', 'Figures');          % Sets base file path for Figure saving
+    baseFilepath = fullfile('Figures');          % Sets base file path for Figure saving
+    baseName = 'simpleSim';                           % Sets base name for Figure saving
+    timeUnit = '[min]';                                 % Sets time axis to be in hours when plotting
+    angUnit = '[deg]';                                 % Sets time axis to be in hours when plotting
+    flagAccel = false;                                % adds acceleration to state when true
+    flagGravModel = 'j2On';                           % Sets up grav param to be on or off
+    flagGravModelTruth = 'j2On';                      % Sets label for saving data with the truth data model
+    flagScenario = 'KayhanRelWSE2SE'; % 'Erros';             % Sets central body for sim you want to run
+    flagFilterType = 'EKF';
+    flagBurnOn = true;                               % Zeros our burn hist when set to false
+    flagAccelerometerPerfectMatch = true;                      % When true, uses imperfect burn that matches the truth when false, matches commanded burn
+    fileBase = fullfile('.', 'MAT', flagScenario); % Sets base file path for Figure .mat file read in
+    plotStates = true;
+    flagCovPlotOff = false;
+    qkminus0 = 1e-9;
+    firstPlot = 1;
+    flagPlotFrame = 'rtn';
+    plotExclude = [];
+    fontSize = 28;
+    line_width = 3;
+    textInterpreter = 'latex';
+    set(0, 'DefaultTextInterpreter', 'latex')
+    set(0, 'DefaultLegendInterpreter', 'latex')
+    axesLineWidth = 2;
+    gridLineWidth = 1;
+    markerSize = 3;
+    flagZoomSave = 'none';
+    flagGenCellsForPlotting = true;
+    flagPlotTitle = true;
+end
+
+% blueCB = [68 , 119, 170]/255;
+% redCB = [238, 102, 119;]/255;
+% purpleCB = [170, 51 , 119]/255;
+% greenCB = [34 , 136, 51 ]/255;
+magentaCB = [170, 68, 153]/255; % BFF
+darkGreenCB =  [17, 119, 51]/255; % iBFF
+cyanCB = [102, 204, 238]/255; %
+figLoc = [100, 100, 1050, 700];
+grayCB = [0.7, 0.7, 0.7];
+
+%% Load in Truth and Measurment Data
+load(fullfile(fileBase, 'truthState.mat'))
+load(fullfile(fileBase, 'meas_.mat'))
+load(fullfile(fileBase, 'truemeas.mat'))
+load(fullfile(fileBase, 'groundFeatIndex.mat'))
+load(fullfile(fileBase, 'acaf2aci.mat'))
+load(fullfile(fileBase, 'aci2body1CF1.mat'))
+load(fullfile(fileBase, 'aci2body1CF2.mat'))
+load(fullfile(fileBase, 'aci2body2CF1.mat'))
+load(fullfile(fileBase, 'aci2body2CF2.mat'))
+load(fullfile(fileBase, 'timeMat.mat'))
+load(fullfile(fileBase, 'burnHistActual.mat'));
+load(fullfile(fileBase, 'burnHistCommand.mat'));
+load(fullfile(fileBase, 'Rmat.mat'))
+load(fullfile(fileBase, 'Hmat.mat'))
+load(fullfile(fileBase, 'featureSet.mat'));
+
+
+%% Implement Flags
+if flagAccelerometerPerfectMatch
+    burnName = '_noNoiseAccelerometer';
+else
+    burnName = '_noisyAccelerometer';
+end
+
+if ~flagBurnOn
+    burnName = '_noBurn';
+end
+
+procNoiseName = '';
+n_exp = length(expNum);
+Q0 = zeros(3*n_exp);
+for i = 1:n_exp
+    if expNum(i) == 0
+        Q0(((i*3-2):i*3), ((i*3-2):i*3)) = zeros(3);
+        procNoiseName = strcat(procNoiseName, '_zeroQ');
+    else
+        Q0(((i*3-2):i*3), ((i*3-2):i*3)) = eye(3)*10^(-expNum(i)); % 1e-6 is good for no accel -- 1e-12 is good for accel on
+        procNoiseName = strcat('_nonzeroQ_eneg', num2str(expNum(i)));
+    end
+end
+
+if ~flagEstTargetAccel && ~flagEstChaserAccelBias
+    ChaserStates = 7:12;
+    if contains(flagScenario, 'Rel')
+        titles_states = {'$\mathbf{r}_{t/c}$ Errors v Time', '$\mathbf{v}_{t/c}$ Errors v Time', '$\mathbf{r}_{c}$ Errors v Time', '$\mathbf{v}_{c}$ Errors v Time'};
+        axisUnits_states = {'[$m$]', '[$m/s$]', '[$m$]', '[$m/s$]'};
+        figNames_states = {'RelPos', 'RelVel', 'ChaserPos', 'ChaserVel'};
+    else
+        titles_states = {'$\mathbf{r}_{t}$ Errors v Time', '$\mathbf{v}_{t}$ Errors v Time', '$\mathbf{r}_{c}$ Errors v Time', '$\mathbf{v}_{c}$ Errors v Time'};
+        axisUnits_states = {'[$m$]', '[$m/s$]', '[$m$]', '[$m/s$]'};
+        figNames_states = {'TargetPos', 'TargetVel', 'ChaserPos', 'ChaserVel'};
+    end
+    accelName = 'accelOffBiasOff';
+    if flagLidarBias
+        nStateFigs = 4;
+        truthState = truthState([1:6, 10:15, 19], :);
+        n = 13;
+    else
+        nStateFigs = 4;
+        truthState = truthState([1:6, 10:15], :);
+        n = 12;
+    end
+elseif ~flagEstTargetAccel && flagEstChaserAccelBias
+    ChaserStates = 7:15;
+    if contains(flagScenario, 'Rel')
+        titles_states = {'$\mathbf{r}_{t/c}$ Errors v Time', '$\mathbf{v}_{t/c}$ Errors v Time', '$\mathbf{r}_{c}$ Errors v Time', '$\mathbf{v}_{c}$ Errors v Time', '$\mathbf{b}_{c}$ Errors v Time'};
+        axisUnits_states = {'[$m$]', '[$m/s$]', '[$m$]', '[$m/s$]', '[$m/s^2$]'};
+        figNames_states = {'RelPos', 'RelVel', 'ChaserPos', 'ChaserVel', 'ChaserBias'};
+    else
+        titles_states = {'$\mathbf{r}_{t}$ Errors v Time', '$\mathbf{v}_{t}$ Errors v Time', '$\mathbf{r}_{c}$ Errors v Time', '$\mathbf{v}_{c}$ Errors v Time', '$\mathbf{b}_{c}$ Errors v Time'};
+        axisUnits_states = {'[$m$]', '[$m/s$]', '[$m$]', '[$m/s$]', '[$m/s^2$]'};
+        figNames_states = {'TargetPos', 'TargetVel', 'ChaserPos', 'ChaserVel', 'ChaserBias'};
+    end
+    accelName = 'accelOffBiasOn';
+    if flagLidarBias
+        nStateFigs = 5;
+        truthState = truthState([1:6, 10:19], :);
+        n = 16;
+    else
+        nStateFigs = 5;
+        truthState = truthState([1:6, 10:18], :);
+        n = 15;
+    end
+elseif flagEstTargetAccel && flagEstChaserAccelBias
+    ChaserStates = 10:18;
+    if contains(flagScenario, 'Rel')
+        titles_states = {'$\mathbf{r}_{t/c}$ Errors v Time', '$\mathbf{v}_{t/c}$ Errors v Time', '$\mathbf{a}_{t}$ Errors v Time', '$\mathbf{r}_{c}$ Errors v Time', '$\mathbf{v}_{c}$ Errors v Time', '$\mathbf{b}_{c}$ Errors v Time'};
+        axisUnits_states = {'[$m$]', '[$m/s$]', '[$m/s^2$]', '[$m$]', '[$m/s$]', '[$m/s^2$]'};
+        figNames_states = {'RelPos', 'RelVel', 'RelAccel', 'ChaserPos', 'ChaserVel', 'ChaserBias'};
+    else
+        titles_states = {'$\mathbf{r}_{t}$ Errors v Time', '$\mathbf{v}_{t}$ Errors v Time', '$\mathbf{a}_{t}$ Errors v Time', '$\mathbf{r}_{c}$ Errors v Time', '$\mathbf{v}_{c}$ Errors v Time', '$\mathbf{b}_c$ Errors v Time'};
+        axisUnits_states = {'[$m$]', '[$m/s$]', '[$m/s^2$]', '[$m$]', '[$m/s$]', '[$m/s^2$]'};
+        figNames_states = {'TargetPos', 'TargetVel', 'TargetAccel', 'ChaserPos', 'ChaserVel', 'ChaserBias'};
+    end
+    accelName = 'accelOnBiasOn';
+    if flagLidarBias
+        nStateFigs = 6;
+        n = 19;
+    else
+        nStateFigs = 6;
+        truthState = truthState(1:18, :);
+        n = 18;
+    end
+elseif flagEstTargetAccel && ~flagEstChaserAccelBias
+    ChaserStates = 10:15;
+    if contains(flagScenario, 'Rel')
+        titles_states = {'$\mathbf{r}_{t/c}$ Errors v Time', '$\mathbf{v}_{t/c}$ Errors v Time', '$\mathbf{a}_{t}$ Errors v Time', '$\mathbf{r}_{c}$ Errors v Time', '$\mathbf{v}_{c}$ Errors v Time'};
+        axisUnits_states = {'[$m$]', '[$m/s$]', '[$m/s^2$]', '[$m$]', '[$m/s$]'};
+        figNames_states = {'RelPos', 'RelVel', 'RelAccel', 'ChaserPos', 'ChaserVel'};
+    else
+        titles_states = {'$\mathbf{r}_{t}$ Errors v Time', '$\mathbf{v}_{t}$ Errors v Time', '$\mathbf{a}_{t}$ Errors v Time', '$\mathbf{r}_{c}$ Errors v Time', '$\mathbf{v}_{c}$ Errors v Time'};
+        axisUnits_states = {'[$m$]', '[$m/s$]', '[$m/s^2$]', '[$m$]', '[$m/s$]'};
+        figNames_states = {'TargetPos', 'TargetVel', 'TargetAccel', 'ChaserPos', 'ChaserVel'};
+    end
+    accelName = 'accelOnBiasOff';
+    if flagLidarBias
+        nStateFigs = 5;
+        truthState = truthState([1:15, 19], :);
+        n = 16;
+    else
+        nStateFigs = 5;
+        truthState = truthState(1:15, :);
+        n = 15;
+    end
+end
+
+if flagLidarBias
+    titles_states{nStateFigs+1} = 'Lidar Bias Errors v Time';
+    axisUnits_states{nStateFigs+1} = '[$m$]';
+    figNames_states{nStateFigs+1} = 'LidarBias';
+    accelName = strcat(accelName, 'LidarBiasOn');
+else
+    accelName = strcat(accelName, 'LidarBiasOff');
+end
+
+%% Measurement Flag Handling
+
+[m, ~] = size(meas);
+
+if m == 3
+    if contains(flagScenario, 'direct')
+        titlesRes = {'Relative Range [X] Residuals v Time', 'Relative Range [Y] Residuals v Time', 'Relative Range [Z] Residuals v Time'};
+        titlesMeas = {'Relative Range [X] v Time', 'Relative Range [Y] v Time', 'Relative Range [Z] v Time'};
+        figNameMeas = {'RngX', 'RngY', 'RngZ'};
+        resUnits = {'Range [$m$]', 'Range [$m$]', 'Range [$m$]'};
+    else
+        titlesRes = {'Range Residuals v Time', 'Relative Azimuth Residuals v Time', 'Relative Elevation Residuals v Time'};
+        titlesMeas = {'Range v Time', 'Relative Azimuth v Time', 'Relative Elevation v Time'};
+        figNameMeas = {'Rng', 'RelAz', 'RelEl'};
+        resUnits = {'Range [$m$]', 'Az ', 'El '};
+    end
+elseif m == 5
+    titlesRes = {'Range Residuals v Time', 'Relative Azimuth Residuals v Time', 'Relative Elevation Residuals v Time', 'Feature Azimuth Residuals v Time', 'Feature Elevation Residuals v Time'};
+    titlesMeas = {'Range v Time', 'Relative Azimuth v Time', 'Relative Elevation v Time', 'Feature Azimuth v Time', 'Feature Elevation v Time'};
+    figNameMeas = {'Rng', 'RelAz', 'RelEl', 'FeatureAz', 'FeatureEl'};
+    resUnits = {'Range [$m$]', 'Az ', 'El ', 'Az ', 'El '};
+elseif m == 6
+    titlesRes = {'Range Residuals v Time', 'Range Rate Residuals v Time', 'Relative Azimuth Residuals v Time', 'Relative Elevation Residuals v Time', 'Feature Azimuth Residuals v Time', 'Feature Elevation Residuals v Time'};
+    titlesMeas = {'Range v Time', 'Range Rate v Time', 'Relative Azimuth v Time', 'Relative Elevation v Time', 'Feature Azimuth v Time', 'Feature Elevation v Time'};
+    figNameMeas = {'Rng', 'RngRate', 'RelAz', 'RelEl', 'FeatureAz', 'FeatureEl'};
+    resUnits = {'Range [$m$]', 'RangeRate [$m/s$]', 'Az ', 'El ', 'Az ', 'El '};
+end
+if contains(flagPlotFrame, 'rtn')
+    baseAxis = {'R', 'T', 'N'};
+    baseAxis_accel = {'X', 'Y', 'Z'};
+else
+    baseAxis = {'X', 'Y', 'Z'};
+end
+mcName = strcat('MC', num2str(nMC));
+
+figNameSave = fullfile(baseFilepath, flagScenario, flagFilterType, mcName, strcat(accelName, flagGravModelTruth,flagGravModel, burnName, procNoiseName));
+
+if flagInitCovStudy
+    figNameSave = fullfile(baseFilepath, flagScenario, flagFilterType, strcat('InitCovFactor', P0str{iiP0}),mcName, strcat(accelName, flagGravModelTruth,flagGravModel, burnName, procNoiseName));
+else
+    figNameSave = fullfile(baseFilepath, flagScenario, flagFilterType, mcName, strcat(accelName, flagGravModelTruth,flagGravModel, burnName, procNoiseName));
+end
+
+
+if ~exist(figNameSave, 'dir')
+    mkdir(figNameSave)
+end
+
+% if strcmp(timeUnit, '[h]')
+%     time = time / 3600; % Convert to Hours
+% elseif strcmp(timeUnit, '[min]')
+%     time = time / 60; % Convert to min
+% end
+
+if strcmp(flagZoomSave, 'zoomEnd')
+    figNameEnd = '_zoomedEnd.png';
+elseif strcmp(flagZoomSave, 'zoomAll')
+    figNameEnd  ='_zoomedAll.png';
+else
+    figNameEnd = '.png';
+end
+
+
+%% Data Proceeing for Plotting
+n = sum(n_elm);
+N = length(time);
+% fileNameSaveCells = fullfile(fileBase, strcat(accelName, flagGravModelTruth, flagGravModel, burnName), 'fullCells');
+plotList = firstPlot:nMC;
+if ~flagEstTargetAccel && ~flagEstChaserAccelBias
+    accelName = 'accelOffBiasOff';
+    if flagLidarBias
+        truthState = truthState([1:6, 10:15, 19], :);
+    else
+        truthState = truthState([1:6, 10:15], :);
+    end
+    targetStates = 1:6;
+    deputyStates = 7:12;
+elseif ~flagEstTargetAccel && flagEstChaserAccelBias
+    if flagLidarBias
+        truthState = truthState([1:6, 10:19], :);
+    else
+        % truthState = truthState([1:6, 10:18], :);
+    end
+    targetStates = 1:6;
+    deputyStates = 7:15;
+elseif flagEstTargetAccel && ~flagEstChaserAccelBias
+    if flagLidarBias
+        truthState = truthState([1:15, 19], :);
+    else
+        truthState = truthState(1:15, :);
+    end
+    targetStates = 1:9;
+    deputyStates = 10:15;
+else
+    if ~flagLidarBias
+        truthState = truthState(1:18, :);
+    end
+    targetStates = 1:9;
+    deputyStates = 10:18;
+end
+
+fileNameSaveCells = fullfile(fileBase, strcat(accelName, flagGravModelTruth, flagGravModel, burnName), 'fullCells');
+
+if ~flagGenCellsForPlotting
+    if ~exist(fullfile(fileNameSaveCells, 'sigmaSquareAll.mat'), 'file')
+        flagGenCellsForPlotting = true;
+    end
+end
+
+
+
+if flagGenCellsForPlotting
+    if ~exist(fileNameSaveCells, 'dir')
+        mkdir(fileNameSaveCells)
+    end
+    % Memory Allocation
+    xErrAll = cell(1, nMC);
+    covAll = cell(nMC, 2);
+    measAll = cell(1, nMC);
+    resAll = cell(nMC, 2);
+    resCovAll = cell(nMC, 2);
+    resCovAll_sample = cell(nMC, 2);
+    qCountDiagErrAll = cell(nMC);
+    qCountDiagAll = cell(nMC);
+    qCovAll = cell(1, nMC);
+    covAllMCPlus = zeros(n, N);
+    covAllMCMinus = zeros(n, N);
+    PyyAllMCMinus = zeros(m, N);
+    errAll = zeros(n, N);
+    sigmaAll = zeros(n, N);
+    sigmaSquareAll = zeros(n, n, N);
+    meas_sampCov_minus = NaN(nMC, m, N);
+    meas_sampCov_plus = NaN(nMC, m, N);
+
+
+    if ~isempty(plotExclude)
+        n_exclude = length(plotExclude);
+        for i = 1:n_exclude
+            plotList = plotList(plotList~=plotExclude(i));
+        end
+    end
+
+    for ii = plotList
+        % Loops over MC runs for each alt
+        % Read in run data
+        fileNameLoad = fullfile(fileBase, strcat(accelName, flagGravModelTruth, flagGravModel, burnName), strcat('MC_', num2str(ii)));
+        load(fullfile(fileNameLoad, 'xhist.mat'))
+        load(fullfile(fileNameLoad, 'PPlushist.mat'))
+        load(fullfile(fileNameLoad, 'Pminushist.mat'))
+        load(fullfile(fileNameLoad, 'riPlushist.mat'))
+        load(fullfile(fileNameLoad, 'riMinushist.mat'))
+        load(fullfile(fileNameLoad, 'PriPlushist.mat'))
+        load(fullfile(fileNameLoad, 'PriMinushist.mat'))
+        load(fullfile(fileNameLoad, 'meas_runhist.mat'))
+        load(fullfile(fileNameLoad, 'numNodes.mat'));%, 'num_nodesPlot')
+        load(fullfile(fileBase, strcat('truthStateMC', num2str(ii), '.mat')))
+        load(fullfile(fileBase, strcat('truemeasMC', num2str(ii),'.mat')))
+        if contains(flagQ, 'CorrMethod')
+            load(fullfile(fileNameLoad, 'qCountDiag_runhist.mat'))
+            load(fullfile(fileNameLoad, 'qCov.mat'))
+        end
+        if ~flagEstTargetAccel && ~flagEstChaserAccelBias
+            accelName = 'accelOffBiasOff';
+            if flagLidarBias
+                truthState = truthState([1:6, 10:15, 19], :);
+            else
+                truthState = truthState([1:6, 10:15], :);
+            end
+            targetStates = 1:6;
+            deputyStates = 7:12;
+        elseif ~flagEstTargetAccel && flagEstChaserAccelBias
+            if flagLidarBias
+                truthState = truthState([1:6, 10:19], :);
+            else
+                truthState = truthState([1:6, 10:18], :);
+            end
+            targetStates = 1:6;
+            deputyStates = 7:15;
+        elseif flagEstTargetAccel && ~flagEstChaserAccelBias
+            if flagLidarBias
+                truthState = truthState([1:15, 19], :);
+            else
+                truthState = truthState(1:15, :);
+            end
+            targetStates = 1:9;
+            deputyStates = 10:15;
+        else
+            if ~flagLidarBias
+                truthState = truthState(1:18, :);
+            end
+            targetStates = 1:9;
+            deputyStates = 10:18;
+        end
+
+        if contains(flagScenario, 'nonDim')
+            mu = 0.012150584270; % mass ratio from paper
+            L = 384400; % km -- characteristic length
+            L_m = L*1000;% m
+            tCharacteristic = 3.751902619517e5; % s -- characteristic time from paper
+
+            PNondim = 1.511143593137; % period non dimensional from paper
+
+            tDim = PNondim*tCharacteristic; % dimensional period -- convert as nondimensional period * characteristic time
+            P_rot = tDim; %
+            n_rot = 2*pi/P_rot; % 1/s
+            % Convert everything to dimensional/inertial
+            % State history
+            for i = 1:N
+                if contains(flagScenario, 'Rel')
+                    % Get full inertial state first
+                    if n_elm(1) > 6
+                        truth_N =  [truthState(targetStates(1:6), i) + truthState(ChaserStates(1:6), i); truthState(targetStates(7:9), i); truthState(ChaserStates, i)];
+                        x_N =  [x(targetStates(1:6), i) + x(ChaserStates(1:6), i); x(targetStates(7:9), i); x(ChaserStates, i)];
+                    else
+                        truth_N =  [truthState(targetStates(1:6), i) + truthState(ChaserStates(1:6), i); truthState(ChaserStates, i)];
+                        x_N =  [x(targetStates(1:6), i) + x(ChaserStates(1:6), i); x(ChaserStates, i)];
+                    end
+                end
+
+                % Now convert to inertial and dimensional
+                truth_N = nonDimRotational_dimInertial_conversion(truth_N, time(i)*tCharacteristic, L_m, n_rot, tCharacteristic, 'fullState_nondimR2dimN');
+                x_N = nonDimRotational_dimInertial_conversion(x_N, time(i)*tCharacteristic, L_m, n_rot, tCharacteristic, 'fullState_nondimR2dimN');
+
+                if contains(flagScenario, 'Rel')
+                    % Now put things back into relNav States
+                    if n_elm(1) > 6
+                        truth_N =  [truth_N(targetStates(1:6)) - truth_N(ChaserStates(1:6)); truth_N(targetStates(7:9)); truth_N(ChaserStates)];
+                        x_N =  [x_N(targetStates(1:6)) - x_N(ChaserStates(1:6)); x_N(targetStates(7:9)); x_N(ChaserStates)];
+                    else
+                        truth_N =  [truth_N(targetStates(1:6)) -truth_N(ChaserStates(1:6)); truth_N(ChaserStates)];
+                        x_N =  [x_N(targetStates(1:6)) - x_N(ChaserStates(1:6)); x_N(ChaserStates)];
+                    end
+                end
+
+                truthState(:, i) = truth_N;
+                x(:, i) = x_N;
+            end
+
+            % Now convert the covariance matrices
+            for i = 1:N
+                P_dim = P(:, :, i);
+                dX_nonDimR_dX_dimN_c = dX_nonDimRot_dX_dimN(0, time(i)*tCharacteristic, [mu, L_m, n_rot, tCharacteristic]);
+                dX_dimN_dX_nonDimR_c = dX_dimN_dX_nonDimRot(0, time(i)*tCharacteristic, [mu, L_m, n_rot, tCharacteristic]);
+                P_dim(ChaserStates, ChaserStates) = dX_dimN_dX_nonDimR_c*P_dim(ChaserStates, ChaserStates)*dX_dimN_dX_nonDimR_c';
+
+                % Target
+                dX_nonDimR_dX_dimN_t = dX_nonDimRot_dX_dimN(0, time(i)*tCharacteristic, [mu, L_m, n_rot, tCharacteristic]);
+                dX_dimN_dX_nonDimR_t = dX_dimN_dX_nonDimRot(0, time(i)*tCharacteristic, [mu, L_m, n_rot, tCharacteristic]);
+                P_dim(targetStates, targetStates) = dX_dimN_dX_nonDimR_t*P_dim(targetStates, targetStates)*dX_dimN_dX_nonDimR_t';
+
+                P(:, :, i) = P_dim;
+
+                Pminus_dim = Pminus(:, :, i);
+                Pminus_dim(ChaserStates, ChaserStates) = dX_dimN_dX_nonDimR_c*Pminus_dim(ChaserStates, ChaserStates)*dX_dimN_dX_nonDimR_c';
+
+                % Target
+                Pminus_dim(targetStates, targetStates) = dX_dimN_dX_nonDimR_t*Pminus_dim(targetStates, targetStates)*dX_dimN_dX_nonDimR_t';
+
+                Pminus(:, :, i) = Pminus_dim;
+            end
+        end
+
+
+
+        [~, N] = size(x);
+        [m, ~] = size(meas_run);
+
+        plotFrame = zeros(3, 3, 2, N);
+        if contains(flagPlotFrame, 'rtn')
+            for i = 1:N
+                if contains(flagScenario, 'Rel')
+                    xt_N = truthState(targetStates(1:6), i) + truthState(ChaserStates(1:6), i);
+                else
+                    xt_N = truthState(targetStates(1:6), i);
+                end
+                [RTN_N] = inertial2rtn(xt_N);
+                plotFrame(:, :, 1, i) = RTN_N;
+                xc_N = truthState(ChaserStates(1:6), i);
+                [RTN_N] = inertial2rtn(xc_N);
+                plotFrame(:, :, 2, i) = RTN_N;
+            end
+        else
+            for i = 1:N
+                plotFrame(:, :, 1, i) = eye(3);
+                plotFrame(:, :, 2, i) = eye(3);
+            end
+        end
+        
+
+        xErr = truthState - x;
+        for i = 1:N
+            plotFrame_i = eye(n);
+            plotFrame_i(targetStates(1:3), targetStates(1:3)) = plotFrame(:, :, 1, i);
+            plotFrame_i(targetStates(4:6), targetStates(4:6)) = plotFrame(:, :, 1, i);
+            if n_elm(1) == 9
+                plotFrame_i(targetStates(7:9), targetStates(7:9)) = plotFrame(:, :, 1, i);
+            end
+            plotFrame_i(ChaserStates(1:3), ChaserStates(1:3)) = plotFrame(:, :, 2, i);
+            plotFrame_i(ChaserStates(4:6), ChaserStates(4:6)) = plotFrame(:, :, 2, i);
+            xErr(:, i) = plotFrame_i*xErr(:, i);
+        end
+        errAll = errAll + xErr;
+        xErrAll{ii} = xErr;
+        if contains(flagQ, 'CorrMethod')
+            qCountDiagErrAllTemp = NaN(3, N);
+            for i = 1:N
+                if ~isnan(qCountDiag(1, i))
+                    qCountDiagErrAllTemp(:, i) = plotFrame(:, :, i)*(sign(qCountDiag(:, i)).*qkminus0 - qCountDiag(:, i));
+                end
+            end
+            qCountDiagErrAll{ii} = qCountDiagErrAllTemp;
+            qCountDiagAll{ii} = plotFrame(:, :, i)*qCountDiag;
+        end
+
+        % Process Data
+        diagPplus = NaN(n, N);
+        diagPminus = NaN(n, N);
+        diagPyyPlus = NaN(m, N);
+        diagPyyMinus = NaN(m, N);
+        qCountDiagCovSigma = NaN(3, N);
+
+        for i = 1:N
+            plotFrame_i = eye(n);
+            plotFrame_i(targetStates(1:3), targetStates(1:3)) = plotFrame(:, :, 1, i);
+            plotFrame_i(targetStates(4:6), targetStates(4:6)) = plotFrame(:, :, 1, i);
+            if n_elm(1) == 9
+                plotFrame_i(targetStates(7:9), targetStates(7:9)) = plotFrame(:, :, 1, i);
+            end
+            plotFrame_i(ChaserStates(1:3), ChaserStates(1:3)) = plotFrame(:, :, 2, i);
+            plotFrame_i(ChaserStates(4:6), ChaserStates(4:6)) = plotFrame(:, :, 2, i);
+            diagPplus(:, i) = sqrt(diag(squeeze(plotFrame_i*P(:, :, i)*plotFrame_i')));
+            covAllMCPlus(:, i) = covAllMCPlus(:, i) + diagPplus(:, i).^2;
+            diagPminus(:, i) = sqrt(diag(squeeze(plotFrame_i*Pminus(:, :, i)*plotFrame_i')));
+            covAllMCMinus(:, i) = covAllMCMinus(:, i) + diagPminus(:, i).^2;
+            diagPyyPlus(:, i) = sqrt(diag(squeeze(Pri(:, :, i))));
+            diagPyyMinus(:, i) = sqrt(diag(squeeze(PriMinus(:, :, i))));
+            PyyAllMCMinus(:, i) = PyyAllMCMinus(:, i) + diagPyyMinus(:, i).^2;
+            if contains(flagQ, 'Corr')
+                qCountDiagCovSigma(:, i) = sqrt(diag(plotFrame(:, :, i)*qCountDiagCov(:, :, i)*plotFrame(:, :, i)'));
+            end
+        end
+
+        riMinus_mean = mean(riMinus, 2, 'omitnan');
+        riPlus_mean = mean(riPlus, 2, 'omitnan');
+        meas_sampCov_ii_i_minus = zeros(m);
+        meas_sampCov_ii_i_plus = zeros(m);
+        for i = 2:N
+            % meas_sampCov_ii_i_minus = (riMinus(:, i) - riMinus_mean)*(riMinus(:, i) - riMinus_mean)';
+            % meas_sampCov_ii_i_plus = (riPlus(:, i) - riPlus_mean)*(riPlus(:, i) - riPlus_mean)';
+            meas_sampCov_ii_i_minus = riMinus(:, i)*riMinus(:, i)';
+            meas_sampCov_ii_i_plus = riPlus(:, i)*riPlus(:, i)';
+            meas_sampCov_minus(ii, :, i) = diag(meas_sampCov_ii_i_minus);
+            meas_sampCov_plus(ii, :, i) = diag(meas_sampCov_ii_i_plus);
+        end
+
+
+        if ~contains(flagScenario, 'direct')
+            if strcmp(angUnit, '[deg]')
+                riMinus(2:m, :) = riMinus(2:m, :)*180/pi;
+                riPlus(2:m, :) = riPlus(2:m, :)*180/pi;
+                diagPyyMinus(2:m, :) = diagPyyMinus(2:m, :)*180/pi;
+                diagPyyPlus(2:m, :) = diagPyyPlus(2:m, :)*180/pi;
+                meas_run(2:m, :) = meas_run(2:m, :)*180/pi;
+                meas_sampCov_minus(ii, 2:m, :) = meas_sampCov_minus(ii, 2:m, :)*(180/pi)^2;
+                meas_sampCov_plus(ii, 2:m, :) = meas_sampCov_plus(ii, 2:m, :)*(180/pi)^2;
+            end
+            if contains(flagScenario, 'nonDim')
+                riMinus(1, :) = riMinus(1, :)*L_m;
+                riPlus(1, :) = riPlus(1, :)*L_m;
+                diagPyyMinus(1, :) = diagPyyMinus(1, :)*L_m;
+                diagPyyPlus(1, :) = diagPyyPlus(1, :)*L_m;
+                meas_run(1, :) = meas_run(1, :)*L_m;
+                meas_sampCov_minus(ii, 1, :) = meas_sampCov_minus(ii, 1, :)*(L_m)^2;
+                meas_sampCov_plus(ii, 1, :) = meas_sampCov_plus(ii, 1, :)*(L_m)^2;
+            end
+        else
+            angUnit = '';
+        end
+
+        
+
+        covAll{ii, 1} = diagPminus;
+        covAll{ii, 2} = diagPplus;
+        resCovAll{ii, 1} = diagPyyMinus;
+        resCovAll{ii, 2} = diagPyyPlus;
+        qCovAll{ii} = qCountDiagCovSigma;
+
+
+
+        measAll{ii} = meas_run;
+        resAll{ii, 1} = riMinus;
+        resAll{ii, 2} = riPlus;
+    end
+
+    if ~contains(flagScenario, 'direct')
+        if strcmp(angUnit, '[deg]')
+            PyyAllMCMinus(2:m, :) = PyyAllMCMinus(2:m, :)*(180/pi)^2;
+        end
+        if contains(flagScenario, 'nonDim')
+            PyyAllMCMinus(1, :) = PyyAllMCMinus(1, :)*(L_m)^2;
+        end
+    end
+    
+    if nMC - firstPlot > 0
+        covAllMCPlus = covAllMCPlus/(nMC-firstPlot);
+        covAllMCMinus = covAllMCMinus/(nMC-firstPlot);
+        PyyAllMCMinus = PyyAllMCMinus/(nMC-firstPlot);
+        errAll = errAll/(nMC-firstPlot);
+    end
+
+    for i = 1:N
+        covAllMCPlus(:, i) = sqrt(covAllMCPlus(:, i));
+        covAllMCMinus(:, i) = sqrt(covAllMCMinus(:, i));
+        PyyAllMCMinus(:, i) = sqrt(PyyAllMCMinus(:, i));
+    end
+
+    for ii_k = 1:N
+        for ii = plotList
+            xErr = xErrAll{ii};
+            % sigmaSquareAll(:, :, ii_k) = sigmaSquareAll(:, :, ii_k) + (errAll(:, ii_k) - squeeze(xErr(:, ii_k)))*(errAll(:, ii_k) - squeeze(xErr(:, ii_k)))';
+            sigmaSquareAll(:, :, ii_k) = sigmaSquareAll(:, :, ii_k) + squeeze(xErr(:, ii_k))*squeeze(xErr(:, ii_k))';
+        end
+    end
+
+    if nMC - firstPlot > 0
+        sigmaSquareAll = sigmaSquareAll/(nMC-firstPlot);
+    end
+
+    for ii_k = 1:N
+        sigmaAll(:, ii_k) = sqrt(diag(sigmaSquareAll(:, :, ii_k)));
+    end
+
+    meas_sampCov_minus_avg = sqrt(squeeze(mean(meas_sampCov_minus, 1, 'omitnan')));
+    meas_sampCov_plus_avg = sqrt(squeeze(mean(meas_sampCov_plus, 1, 'omitnan')));
+
+    % figure
+    % for jj_test = 1:3
+    %     subplot(3, 1, jj_test)
+    %     hold on
+    %     for ii_test = 1:nMC
+    %         plot(time, squeeze(meas_sampCov_minus(ii_test, jj_test, :)))
+    %     end
+    %     plot(time, meas_sampCov_minus_avg(jj_test, :), 'k', 'linewidth', 3)
+    % end
+
+    % if ~contains(flagScenario, 'direct')
+    %     if strcmp(angUnit, '[deg]')
+    %         riMinus(2:m, :) = riMinus(2:m, :)*180/pi;
+    %         riPlus(2:m, :) = riPlus(2:m, :)*180/pi;
+    %         diagPyyMinus(2:m, :) = diagPyyMinus(2:m, :)*180/pi;
+    %         diagPyyPlus(2:m, :) = diagPyyPlus(2:m, :)*180/pi;
+    %         meas_run(2:m, :) = meas_run(2:m, :)*180/pi;
+    %     end
+    % else
+    %     angUnit = '';
+    % end
+
+    save(fullfile(fileNameSaveCells, 'xErr.mat'), "xErrAll")
+    save(fullfile(fileNameSaveCells, 'covAll.mat'), "covAll")
+    save(fullfile(fileNameSaveCells, 'measAll.mat'), "measAll")
+    save(fullfile(fileNameSaveCells, 'resAll.mat'), "resAll")
+    save(fullfile(fileNameSaveCells, 'resCovAll.mat'), "resCovAll")
+    save(fullfile(fileNameSaveCells, 'qCountDiagErrAll.mat'), "qCountDiagErrAll")
+    save(fullfile(fileNameSaveCells, 'qCountDiagAll.mat'), "qCountDiagAll")
+    save(fullfile(fileNameSaveCells, 'qCovAll.mat'), "qCovAll")
+    save(fullfile(fileNameSaveCells, 'sigmaAll.mat'), "sigmaAll")
+    save(fullfile(fileNameSaveCells, 'sigmaSquareAll.mat'), "sigmaSquareAll")
+    save(fullfile(fileNameSaveCells, 'covAllMCPlus.mat'), "covAllMCPlus")
+    save(fullfile(fileNameSaveCells, 'covAllMCMinus.mat'), "covAllMCMinus")
+    save(fullfile(fileNameSaveCells, 'errAll.mat'), "errAll")
+    save(fullfile(fileNameSaveCells, 'sampResMinusCovAll.mat'), "meas_sampCov_minus_avg")
+    save(fullfile(fileNameSaveCells, 'sampResPlusCovAll.mat'), "meas_sampCov_plus_avg")
+    save(fullfile(fileNameSaveCells, 'PyyAllMCMinus.mat'), "PyyAllMCMinus")
+else
+    load(fullfile(fileNameSaveCells, 'xErr.mat')); % , "xErrAll")
+    load(fullfile(fileNameSaveCells, 'covAll.mat')); % , "covAll")
+    load(fullfile(fileNameSaveCells, 'measAll.mat')); % , "measAll")
+    load(fullfile(fileNameSaveCells, 'resAll.mat')); % , "resAll")
+    load(fullfile(fileNameSaveCells, 'resCovAll.mat')); % , "resCovAll")
+    load(fullfile(fileNameSaveCells, 'qCountDiagErrAll.mat')); % , "qCountDiagErrAll")
+    load(fullfile(fileNameSaveCells, 'qCountDiagAll.mat')); % , "qCountDiagAll")
+    load(fullfile(fileNameSaveCells, 'qCovAll.mat')); % , "qCovAll")
+    load(fullfile(fileNameSaveCells, 'covAllMCPlus.mat')); % , "covAllMCPlus")
+    load(fullfile(fileNameSaveCells, 'covAllMCMinus.mat')); % , "covAllMCMinus")
+    load(fullfile(fileNameSaveCells, 'errAll.mat')); %, "errAll")
+    load(fullfile(fileNameSaveCells, 'sigmaAll.mat')); % , "sigmaAll")
+    load(fullfile(fileNameSaveCells, 'sigmaSquareAll.mat')); % , "sigmaSquaredAll")
+    load(fullfile(fileNameSaveCells, 'sampResMinusCovAll.mat'));%, "meas_sampCov_minus_avg")
+    load(fullfile(fileNameSaveCells, 'sampResPlusCovAll.mat'));%, "meas_sampCov_plus_avg")
+    load(fullfile(fileNameSaveCells, 'PyyAllMCMinus.mat'));%, "PyyAllMCMinus")
+end
+
+if time(1) ~= 0
+    time = time - time(1);
+end
+
+if contains(flagScenario, 'nonDim')
+    time = time*tCharacteristic;
+end
+
+if strcmp(timeUnit, '[h]')
+    time = time / 3600; % Convert to Hours
+elseif strcmp(timeUnit, '[min]')
+    time = time / 60; % Convert to min
+end
+
+%% NEES Results
+load(fullfile(fileBase, strcat(accelName, flagGravModelTruth, flagGravModel, burnName), 'NEEShist.mat'))
+load(fullfile(fileBase, strcat(accelName, flagGravModelTruth, flagGravModel, burnName), 'NEESdiaghist.mat'))
+epsNEESbar = mean(NEES,1);
+epsNEESdiagbar = mean(NEESdiag,1);
+alphaNEES = 0.01; % significance level
+Nnx = nMC*n;
+% Compute Intervals:
+r1x = chi2inv(alphaNEES/2, Nnx )./ nMC;
+r2x = chi2inv(1-alphaNEES/2, Nnx )./ nMC;
+figNEES = figure(80);
+ax = gca;
+ax.GridLineWidth = gridLineWidth;
+ax.LineWidth = axesLineWidth;
+ax.FontSize = fontSize;
+hold on
+grid minor
+box on
+plot(epsNEESbar(2:end),'o','MarkerSize',markerSize, 'Color', magentaCB)
+plot(epsNEESdiagbar(2:end),'o','MarkerSize',markerSize, 'Color', darkGreenCB)
+plot(r1x*ones(size(epsNEESbar(2:end))),'k--', 'LineWidth', line_width)
+plot(r2x*ones(size(epsNEESbar(2:end))),'k--', 'LineWidth', line_width)
+ylabel('NEES statistic, $\bar{\epsilon}_x$', 'FontSize',fontSize, 'Interpreter','latex')
+xlabel(strcat('Time ', timeUnit), 'FontSize',fontSize, 'Interpreter','latex')
+title('NEES Estimation Results','FontSize',fontSize, 'Interpreter','latex')
+legend('NEES @ time k', 'NEES @ time k diag','$r_1$ bound', '$r_2$ bound', 'location', 'Best', 'FontSize',fontSize, 'Interpreter','latex')
+set(gcf, 'Position', figLoc)
+if strcmp(flagZoomSave, 'zoomEnd')
+    xlim([xlimSet(1), xlimSet(2)])
+elseif strcmp(flagZoomSave, 'zoomAll')
+    xlim(xlimSet)
+end
+if saveFig
+    % saveas(figNEES, fullfile(figNameSave, strcat('NEES', figNameEnd)));
+    exportgraphics(figNEES, fullfile(figNameSave, strcat('NEES', figNameEnd)), 'resolution',300)
+end
+
+
+
+
+
+load(fullfile(fileBase, strcat(accelName, flagGravModelTruth, flagGravModel, burnName), 'NEESTarghist.mat'))
+load(fullfile(fileBase, strcat(accelName, flagGravModelTruth, flagGravModel, burnName), 'NEESTargdiaghist.mat'))
+epsNEESbar = mean(NEESfirst6,1);
+epsNEESdiagbar = mean(NEESfirst6diag,1);
+alphaNEES = 0.01; % significance level
+Nnx = nMC*length(targetStates);
+% Compute Intervals:
+r1x = chi2inv(alphaNEES/2, Nnx )./ nMC;
+r2x = chi2inv(1-alphaNEES/2, Nnx )./ nMC;
+figNEES = figure(81);
+ax = gca;
+ax.GridLineWidth = gridLineWidth;
+ax.LineWidth = axesLineWidth;
+ax.FontSize = fontSize;
+hold on
+grid minor
+box on
+plot(epsNEESbar(2:end),'o','MarkerSize',markerSize, 'Color', magentaCB)
+plot(epsNEESdiagbar(2:end),'o','MarkerSize',markerSize, 'Color', darkGreenCB)
+plot(r1x*ones(size(epsNEESbar(2:end))),'k--', 'LineWidth', line_width)
+plot(r2x*ones(size(epsNEESbar(2:end))),'k--', 'LineWidth', line_width)
+ylabel('NEES statistic, $\bar{\epsilon}_x$', 'FontSize',fontSize, 'Interpreter','latex')
+xlabel(strcat('Time ', timeUnit), 'FontSize',fontSize, 'Interpreter','latex')
+title('NEES Estimation Results for Target States','FontSize',fontSize, 'Interpreter','latex')
+legend('NEES @ time k', 'NEES @ time k diag','$r_1$ bound', '$r_2$ bound', 'location', 'Best', 'FontSize',fontSize, 'Interpreter','latex')
+set(gcf, 'Position', figLoc)
+if strcmp(flagZoomSave, 'zoomEnd')
+    xlim([xlimSet(1), xlimSet(2)])
+elseif strcmp(flagZoomSave, 'zoomAll')
+    xlim(xlimSet)
+end
+if saveFig
+    % saveas(figNEES, fullfile(figNameSave, strcat('NEESTargStates', figNameEnd)));
+    exportgraphics(figNEES, fullfile(figNameSave, strcat('NEESTargStates', figNameEnd)), 'resolution',300)
+end
+
+
+%% SNEES Results
+n = sum(n_elm);
+load(fullfile(fileBase, strcat(accelName, flagGravModelTruth, flagGravModel, burnName), 'NEEShist.mat'))
+load(fullfile(fileBase, strcat(accelName, flagGravModelTruth, flagGravModel, burnName), 'NEESdiaghist.mat'))
+epsNEESbar = mean(NEES,1);
+epsNEESdiagbar = mean(NEESdiag,1);
+alphaNEES = 0.01; % significance level
+Nnx = nMC*n;
+% Compute Intervals:
+r1x = chi2inv(alphaNEES/2, Nnx )./ nMC/n;
+r2x = chi2inv(1-alphaNEES/2, Nnx )./ nMC/n;
+figNEES = figure(82);
+ax = gca;
+ax.GridLineWidth = gridLineWidth;
+ax.LineWidth = axesLineWidth;
+ax.FontSize = fontSize;
+hold on
+grid minor
+box on
+plot(epsNEESbar(2:end),'o','MarkerSize',markerSize, 'Color', magentaCB)
+plot(epsNEESdiagbar(2:end)/n,'o','MarkerSize',markerSize, 'Color', darkGreenCB)
+plot(r1x*ones(size(epsNEESbar(2:end))),'k--', 'LineWidth', line_width)
+plot(r2x*ones(size(epsNEESbar(2:end))),'k--', 'LineWidth', line_width)
+ylabel('SNEES statistic, $\bar{\epsilon}_x$', 'FontSize',fontSize, 'Interpreter','latex')
+xlabel(strcat('Time ', timeUnit), 'FontSize',fontSize, 'Interpreter','latex')
+title('SNEES Estimation Results','FontSize',fontSize, 'Interpreter','latex')
+legend('SNEES @ time k', 'SNEES @ time k diag','$r_1$ bound', '$r_2$ bound', 'location', 'Best', 'FontSize',fontSize, 'Interpreter','latex')
+set(gcf, 'Position', figLoc)
+if strcmp(flagZoomSave, 'zoomEnd')
+    xlim([xlimSet(1), xlimSet(2)])
+elseif strcmp(flagZoomSave, 'zoomAll')
+    xlim(xlimSet)
+end
+if saveFig
+    % saveas(figNEES, fullfile(figNameSave, strcat('SNEES', figNameEnd)));
+    exportgraphics(figNEES, fullfile(figNameSave, strcat('SNEES', figNameEnd)), 'resolution',300)
+end
+
+fprintf('SNEES for target states only: %0.6f\n', mean(epsNEESdiagbar(500:end)));
+
+n = n_elm(1);
+load(fullfile(fileBase, strcat(accelName, flagGravModelTruth, flagGravModel, burnName), 'NEESTarghist.mat'))
+load(fullfile(fileBase, strcat(accelName, flagGravModelTruth, flagGravModel, burnName), 'NEESTargdiaghist.mat'))
+epsNEESbar = mean(NEESfirst6,1);
+epsNEESdiagbar = mean(NEESfirst6diag,1);
+alphaNEES = 0.01; % significance level
+Nnx = nMC*length(targetStates);
+% Compute Intervals:
+r1x = chi2inv(alphaNEES/2, Nnx )./ nMC/n;
+r2x = chi2inv(1-alphaNEES/2, Nnx )./ nMC/n;
+figNEES = figure(83);
+ax = gca;
+ax.GridLineWidth = gridLineWidth;
+ax.LineWidth = axesLineWidth;
+ax.FontSize = fontSize;
+hold on
+grid minor
+box on
+plot(epsNEESbar(2:end),'o','MarkerSize',markerSize, 'Color', magentaCB)
+plot(epsNEESdiagbar(2:end)/n,'o','MarkerSize',markerSize, 'Color', darkGreenCB)
+plot(r1x*ones(size(epsNEESbar(2:end))),'k--', 'LineWidth', line_width)
+plot(r2x*ones(size(epsNEESbar(2:end))),'k--', 'LineWidth', line_width)
+ylabel('SNEES statistic, $\bar{\epsilon}_x$', 'FontSize',fontSize, 'Interpreter','latex')
+xlabel(strcat('Time ', timeUnit), 'FontSize',fontSize, 'Interpreter','latex')
+title('SNEES Estimation Results for Target States','FontSize',fontSize, 'Interpreter','latex')
+legend('SNEES @ time k', 'SNEES @ time k diag','$r_1$ bound', '$r_2$ bound', 'location', 'Best', 'FontSize',fontSize, 'Interpreter','latex')
+set(gcf, 'Position', figLoc)
+if strcmp(flagZoomSave, 'zoomEnd')
+    xlim([xlimSet(1), xlimSet(2)])
+elseif strcmp(flagZoomSave, 'zoomAll')
+    xlim(xlimSet)
+end
+if saveFig
+    % saveas(figNEES, fullfile(figNameSave, strcat('SNEESTargStates', figNameEnd)));
+    exportgraphics(figNEES, fullfile(figNameSave, strcat('SNEESTargStates', figNameEnd)), 'resolution',300)
+end
+
+fprintf('SNEES for all states included: %0.6f\n', mean(epsNEESdiagbar(500:end)));
+
+
+figNameCells = {};
+
+%% Plot Results
+countAx = 1;
+figCount = 1;
+count = 1;
+count1 = 1;
+fig = [];
+if plotMeas
+    for iiMeasPlot = 1:m
+        % Residuals
+        figName = strcat(flagScenario, flagGravModelTruth,flagGravModel, burnName, figNameMeas{iiMeasPlot}, '_res');
+        fig(figCount) = figure(figCount);
+        % fig(figCount) = gcf;
+        ax(countAx) = axes;
+        ax(countAx).FontSize = fontSize;
+        ax(countAx).GridLineWidth = gridLineWidth;
+        ax(countAx).LineWidth = axesLineWidth;
+        set(gcf, 'Position', figLoc)
+        grid minor
+        hold on
+        box on
+        countAx = countAx + 1;
+        % p1 = plot(time, riMinus(j, :), '.b');
+        for iiMC = plotList
+            riPlus = resAll{iiMC, 1};
+            p2 = plot(time, riPlus(iiMeasPlot, :), '.', 'Color',grayCB, 'MarkerSize', markerSize);
+        end
+        % grid minor
+        if flagPlotTitle
+            title(titlesRes{iiMeasPlot}, 'FontSize',fontSize)
+        end
+        xlabel(strcat('Time ', timeUnit), 'FontSize',fontSize)
+        if iiMeasPlot == 1
+            ylabel(resUnits{count1}, 'FontSize', fontSize)
+        else
+            ylabel(strcat(resUnits{count1}, angUnit), 'FontSize',fontSize)
+        end
+        if ~flagCovPlotOff
+            % TODO: Put this back on
+            % for iiMC = plotList
+            %     diagPyyPlus = resCovAll{iiMC, 2};
+            %     p4 = plot(time, 3*diagPyyPlus(iiMeasPlot, :), '--r', 'linewidth', 2);
+            %     plot(time, -3*diagPyyPlus(iiMeasPlot, :), '--r', 'linewidth', 2)
+            %     plotLabelLines = [p2, p4];
+            %     legend(plotLabelLines, 'Error$^+$', '$3\sigma^+$','Interpreter','latex', 'location', 'BestOutside')
+            % end
+            % for iiMC = plotList
+            diagPyyMinus = resCovAll{firstPlot, 1};
+            p5 = plot(time, 3*meas_sampCov_minus_avg(iiMeasPlot, :), ':', 'LineWidth', line_width,  'Color', darkGreenCB);
+            plot(time, -3*meas_sampCov_minus_avg(iiMeasPlot, :), ':', 'LineWidth', line_width,  'Color', darkGreenCB);
+            % p4 = plot(time, 3*diagPyyMinus(iiMeasPlot, :), '--k', 'LineWidth', line_width);
+            % plot(time, -3*diagPyyMinus(iiMeasPlot, :), '--k', 'LineWidth', line_width)
+            p4 = plot(time, 3*PyyAllMCMinus(iiMeasPlot, :), '--', 'LineWidth', line_width, 'Color', magentaCB);
+            plot(time, -3*PyyAllMCMinus(iiMeasPlot, :), '--', 'LineWidth', line_width, 'Color', magentaCB);
+            plotLabelLines = [p2, p4, p5];
+            legend(plotLabelLines, 'ith Run Error$^-$', '$Avg 3\sigma^-$', 'Sample $3\sigma^-$','Interpreter','latex', 'location', 'BestOutside')
+            % end
+        end
+        count1 = count1+1;
+        if strcmp(flagZoomSave, 'zoomEnd')
+            xlim([xlimSet(1), xlimSet(2)])
+        elseif strcmp(flagZoomSave, 'zoomAll')
+            xlim(xlimSet)
+        end
+        if saveFig
+            figNameCells{figCount} = fullfile(figNameSave, strcat(figNameMeas{iiMeasPlot}, '_res', figNameEnd));
+            exportgraphics(gcf, figNameCells{figCount}, 'resolution',300)
+            % saveas(fig(figCount), fullfile(figNameSave, strcat(figNameMeas{iiMeasPlot}, '_res', figNameEnd)))
+        end
+        figCount = figCount + 1;
+
+        % Measurements
+        figName = strcat(flagScenario, flagGravModelTruth,flagGravModel, burnName, figNameMeas{iiMeasPlot}, '_meas');
+        fig(figCount) = figure(figCount);
+        set(gcf, 'Position', figLoc)
+        ax(countAx) = axes;
+        ax(countAx).FontSize = fontSize;
+        ax(countAx).GridLineWidth = gridLineWidth;
+        ax(countAx).LineWidth = axesLineWidth;
+        grid minor
+        hold on
+        box on
+        countAx = countAx + 1;
+
+        for iiMC = plotList
+            meas_run = measAll{iiMC};
+            p1 = plot(time, meas_run(iiMeasPlot, :), '.', 'Color', darkGreenCB, 'MarkerSize',markerSize);
+        end
+
+        if flagPlotTitle
+            title(titlesMeas{iiMeasPlot}, 'FontSize',fontSize)
+        end
+        xlabel(strcat('Time ', timeUnit), 'FontSize',fontSize)
+        if iiMeasPlot == 1
+            ylabel(resUnits{count}, 'FontSize', fontSize)
+        else
+            ylabel(strcat(resUnits{count}, angUnit), 'FontSize',fontSize)
+        end
+        count = count+1;
+        if strcmp(flagZoomSave, 'zoomEnd')
+            xlim([xlimSet(1), xlimSet(2)])
+        elseif strcmp(flagZoomSave, 'zoomAll')
+            xlim(xlimSet)
+        end
+        if saveFig
+            figNameCells{figCount} = fullfile(figNameSave, strcat(figNameMeas{iiMeasPlot}, '_meas', figNameEnd));
+            exportgraphics(gcf, figNameCells{figCount}, 'resolution',300)
+            % saveas(fig(figCount), fullfile(figNameSave, strcat(figNameMeas{iiMeasPlot}, '_res', figNameEnd)))
+        end
+        figCount = figCount + 1;
+    end
+end
+
+%%
+if plotStates
+    for iiStatePlot = 1:nStateFigs
+        figName = strcat(flagScenario, flagGravModelTruth, flagGravModel, burnName, figNames_states{iiStatePlot});
+        fig(figCount) = figure(figCount); % figure('Name',figName, 'NumberTitle','off');
+        for iiState = 1:3
+            ax(countAx) = subplot(3, 1, iiState);
+            ax(countAx).FontSize = fontSize;
+            ax(countAx).GridLineWidth = gridLineWidth;
+            ax(countAx).LineWidth = axesLineWidth;
+            set(gcf, 'Position', figLoc)
+            grid minor
+            hold on
+            box on
+            countAx = countAx + 1;
+
+            for iiMC = plotList
+                xErr = xErrAll{iiMC};
+                p1 = plot(time, xErr(iiStatePlot*3-(3-iiState), :), 'color', grayCB, 'LineWidth',1);
+            end
+            plotLabelLines = p1;
+            if iiState == 1
+                if flagPlotTitle
+                    title(titles_states{iiStatePlot}, 'FontSize', fontSize)
+                end
+            elseif iiState == 3
+                xlabel(strcat('Time ', timeUnit), 'FontSize',fontSize)
+            end
+            % grid minor
+            if contains(flagPlotFrame, 'rtn')
+                if flagEstChaserAccelBias
+                    if iiStatePlot == nStateFigs
+                        ylabel(strcat(baseAxis_accel{iiState}, ' ', axisUnits_states{iiStatePlot}), 'FontSize',fontSize)
+                    else
+                        ylabel(strcat(baseAxis{iiState}, ' ', axisUnits_states{iiStatePlot}),  'FontSize',fontSize)
+                    end
+                else
+                    ylabel(strcat(baseAxis{iiState}, ' ', axisUnits_states{iiStatePlot}),  'FontSize',fontSize)
+                end
+            else
+                ylabel(strcat(baseAxis{iiState}, ' ', axisUnits_states{iiStatePlot}),  'FontSize',fontSize)
+            end
+            if ~flagCovPlotOff
+                % TODO: Put this back on
+                % for iiMC = firstPlot:firstPlot
+                %     diagPminus = covAll{iiMC, 1};
+                %     diagPplus = covAll{iiMC, 2};
+                %     p2 = plot(time, 3*diagPminus(iiStatePlot*3-(3-iiState), :), '.-g');
+                %     plot(time, -3*diagPminus(iiStatePlot*3-(3-iiState), :), '.-g')
+                %     p3 = plot(time, 3*diagPplus(iiStatePlot*3-(3-iiState), :), '--r');
+                %     plot(time, -3*diagPplus(iiStatePlot*3-(3-iiState), :), '--r')
+                %     plotLabelLines = [p1, p2, p3];
+                % end
+                p4 = plot(time, errAll(iiStatePlot*3-(3-iiState), :), 'k', 'LineWidth', line_width + 0.5);
+                % p2 = plot(time, 3*covAllMCMinus(iiStatePlot*3-(3-iiState), :), '.-', 'Color', cyanCB);
+                % plot(time, -3*covAllMCMinus(iiStatePlot*3-(3-iiState), :), '.-', 'Color', cyanCB)
+                p5 = plot(time, 3*sigmaAll(iiStatePlot*3-(3-iiState), :), ':', 'Color', darkGreenCB, 'LineWidth', line_width);
+                plot(time, -3*sigmaAll(iiStatePlot*3-(3-iiState), :), ':', 'Color', darkGreenCB, 'LineWidth', line_width)
+                p3 = plot(time, 3*covAllMCPlus(iiStatePlot*3-(3-iiState), :), '--', 'Color', magentaCB, 'LineWidth', line_width);
+                plot(time, -3*covAllMCPlus(iiStatePlot*3-(3-iiState), :), '--', 'Color', magentaCB, 'LineWidth', line_width)
+
+                plotLabelLines = [p1,... % p2,...
+                    p3, p5, p4];
+                % for iiMC = plotList
+                % diagPminus = covAll{firstPlot, 1};
+                % diagPplus = covAll{firstPlot, 2};
+                % p2 = plot(time, 3*diagPminus(iiStatePlot*3-(3-iiState), :), '.-g');
+                % plot(time, -3*diagPminus(iiStatePlot*3-(3-iiState), :), '.-g')
+                % p3 = plot(time, 3*diagPplus(iiStatePlot*3-(3-iiState), :), '--r');
+                % plot(time, -3*diagPplus(iiStatePlot*3-(3-iiState), :), '--r')
+                % plotLabelLines = [p1, p2, p3];
+                % end
+                legend(plotLabelLines, 'ith Run Error$^+$',... 'Avg $3\sigma^-$',
+                    'Avg Filter $3\sigma^+$', 'Sample 3$\sigma^+$', 'Sample Avg Err$^+$', 'Interpreter','latex', 'location', 'BestOutside')
+            end
+            if strcmp(flagZoomSave, 'zoomEnd')
+                xlim([xlimSet(1), xlimSet(2)])
+            elseif strcmp(flagZoomSave, 'zoomAll')
+                xlim(xlimSet)
+            end
+        end
+        if saveFig
+            figNameCells{figCount} = fullfile(figNameSave, strcat(figNames_states{iiStatePlot}, figNameEnd));
+            exportgraphics(gcf, figNameCells{figCount}, 'resolution',300)
+            % saveas(fig(figCount), fullfile(figNameSave, strcat(figNames_states{iiStatePlot}, figNameEnd)))
+        end
+        figCount = figCount + 1;
+    end
+    if flagLidarBias
+        figName = strcat(flagScenario, flagGravModelTruth, flagGravModel, burnName, figNames_states{iiStatePlot+1});
+        fig(figCount) = figure(figCount); % figure('Name',figName, 'NumberTitle','off');
+        set(gcf, 'Position', figLoc)
+        ax(countAx) = subplot(1, 1, 1);
+        ax(countAx).FontSize = fontSize;
+        ax(countAx).GridLineWidth = gridLineWidth;
+        ax(countAx).LineWidth = axesLineWidth;
+        countAx = countAx + 1;
+        grid minor
+        hold on
+        box on
+
+        for iiMC = plotList
+            xErr = xErrAll{iiMC};
+            p1 = plot(time, xErr(iiStatePlot*3-(3-iiState)+1, :), 'Color', darkGreenCB, 'LineWidth', line_width);
+        end
+        plotLabelLines = p1;
+        legend(plotLabelLines, 'ith Run Error$^+$','Interpreter','latex', 'location', 'BestOutside')
+        if flagPlotTitle
+            title(titles_states{iiStatePlot+1}, 'FontSize',fontSize)
+        end
+        xlabel(strcat('Time ', timeUnit), 'FontSize',fontSize)
+        % grid minor
+        ylabel(strcat('Bias', axisUnits_states{iiStatePlot+1}),  'FontSize',fontSize)
+        if ~flagCovPlotOff
+            for iiMC = plotList
+                diagPminus = covAll{iiMC, 1};
+                diagPplus = covAll{iiMC, 2};
+                p2 = plot(time, 3*diagPminus(iiStatePlot*3-(3-iiState)+1, :), '.-', 'Color', cyanCB, 'LineWidth', line_width);
+                plot(time, -3*diagPminus(iiStatePlot*3-(3-iiState)+1, :), '.-', 'Color', cyanCB, 'LineWidth', line_width)
+                p3 = plot(time, 3*diagPplus(iiStatePlot*3-(3-iiState)+1, :), '--', 'Color', magentaCB, 'LineWidth', line_width);
+                plot(time, -3*diagPplus(iiStatePlot*3-(3-iiState)+1, :), '--', 'Color', magentaCB, 'LineWidth', line_width)
+            end
+            plotLabelLines = [p1, p2, p3];
+            legend(plotLabelLines, 'ith Run Error$^+$', '$3\sigma^-$', '$3\sigma^+$','Interpreter','latex', 'location', 'BestOutside')
+        end
+        if strcmp(flagZoomSave, 'zoomEnd')
+            xlim([xlimSet(1), xlimSet(2)])
+        elseif strcmp(flagZoomSave, 'zoomAll')
+            xlim(xlimSet)
+        end
+        if saveFig
+            figNameCells{figCount} = fullfile(figNameSave, strcat(figNames_states{iiStatePlot+1}, figNameEnd));
+            exportgraphics(gcf, figNameCells{figCount}, 'resolution',300)
+            % saveas(fig(figCount), fullfile(figNameSave, strcat(figNames_states{iiStatePlot+1}, figNameEnd)))
+        end
+        figCount = figCount + 1;
+    end
+    linkaxes(ax,'x');
+end
+
+%% Covariance estimates
+if contains(flagQ, 'CorrMethod')
+    fig(figCount) = figure(figCount); % figure('Name',figName, 'NumberTitle','off');
+    for j = 1:3
+        set(gcf, 'Position', figLoc)
+        ax(countAx) = subplot(3, 1, j);
+        ax(countAx).FontSize = fontSize;
+        ax(countAx).GridLineWidth = gridLineWidth;
+        ax(countAx).LineWidth = axesLineWidth;
+        grid minor
+        hold on
+        box on
+        countAx = countAx + 1;
+        for iiMC = plotList
+            qkErr = qCountDiagErrAll{iiMC};
+            qCountDiagCovSigma = qCovAll{iiMC};
+            p1 = plot(time, qkErr(j, :), 'color', darkGreenCB, 'LineWidth', line_width);
+            p2 = plot(time, 3*qCountDiagCovSigma(j, :), '--', 'color', magentaCB, 'LineWidth', line_width);
+            plot(time, -3*qCountDiagCovSigma(j, :), '--', 'color', magentaCB, 'LineWidth', line_width);
+        end
+        if strcmp(flagZoomSave, 'zoomEnd')
+            xlim([xlimSet(1), xlimSet(2)])
+        elseif strcmp(flagZoomSave, 'zoomAll')
+            xlim(xlimSet)
+        end
+        plotLabelLines = [p1, p2];
+        legend(plotLabelLines, 'ith Run Error$^+$', '$3\sigma^+$', 'Interpreter','latex', 'location', 'BestOutside')
+        if j == 1
+            if flagPlotTitle
+                title('$\sqrt{diag(\mathbf{Q})}$ Error')
+            end
+        elseif j == 3
+            xlabel(strcat('Time ', timeUnit))
+        end
+        ylabel(strcat('$\sqrt{Q_', num2str(j), '} [(m/s^2)]$'), 'Interpreter',textInterpreter)
+    end
+    if saveFig
+        figNameCells{figCount} = fullfile(figNameSave, strcat('sqrtQcountDiagError_Qtruth_neg', num2str(qkminus0(1, 1)),figNameEnd));
+        exportgraphics(gcf, figNameCells{figCount}, 'resolution',300)
+        % saveas(fig(figCount), fullfile(figNameSave, strcat('QcountDiag_Qtruth_neg', num2str(qkminus0(1, 1)),figNameEnd)))
+    end
+    figCount = figCount + 1;
+    fig(figCount) = figure(figCount); % figure('Name',figName, 'NumberTitle','off');
+    for j = 1:3
+        set(gcf, 'Position', figLoc)
+        ax(countAx) = subplot(3, 1, j);
+        ax(countAx).FontSize = fontSize;
+        ax(countAx).GridLineWidth = gridLineWidth;
+        ax(countAx).LineWidth = axesLineWidth;
+        grid minor
+        hold on
+        countAx = countAx + 1;
+        for iiMC = plotList
+            qCountDiag = qCountDiagAll{iiMC};
+            p1 = plot(time, qCountDiag(j, :), 'color', darkGreenCB, 'LineWidth', line_width);
+        end
+        plot(time, -qkminus0(j, :)*ones(1, N), 'color', magentaCB, 'LineWidth', line_width);
+        p2 = plot(time, qkminus0(j, :)*ones(1, N), 'color', magentaCB, 'LineWidth', line_width);
+        plotLabelLines = [p1, p2];
+        legend(plotLabelLines, 'Est', 'Truth', 'Interpreter','latex', 'location', 'BestOutside')
+        if j == 1
+            if flagPlotTitle
+                title('$\sqrt{diag(\mathbf{Q})}$')
+            end
+        elseif j == 3
+            xlabel(strcat('Time ', timeUnit))
+        end
+        ylabel(strcat('$\sqrt{Q_', num2str(j), '} [(m/s^2)]$'), 'Interpreter',textInterpreter)
+        if strcmp(flagZoomSave, 'zoomEnd')
+            xlim([xlimSet(1), xlimSet(2)])
+        elseif strcmp(flagZoomSave, 'zoomAll')
+            xlim(xlimSet)
+        end
+    end
+    if saveFig
+        % fig(figCount) = gcf;
+        figNameCells{figCount} = fullfile(figNameSave, strcat('QcountDiag_Qtruth_neg', num2str(qkminus0(1, 1)),figNameEnd));
+        exportgraphics(gcf, figNameCells{figCount}, 'resolution',300)
+        % saveas(fig(figCount), fullfile(figNameSave, strcat('QcountDiag_Qtruth_neg', num2str(qkminus0(1, 1)),figNameEnd)))
+    end
+
+
+
+
+
+
+    linkaxes(ax,'x');
+else
+    figCount = figCount - 1;
+end
+
+% if saveFig
+%     for i = 1:figCount
+%         saveas(fig(i), figNameCells{i});
+%         tempFig = fig(i);
+%         figNameTemp = figNameCells{i};
+%         % figNameTemp = figNameTemp(3:end);
+%         % exportgraphics(tempFig, figNameTemp, 'resolution',300)
+%         % cleanfigure(fig(i))
+%         % matlab2tikz('figurehandle',fig(i),'filename', strcat(figNameCells{i}(1:end-4), '.tex'), 'standalone', true);
+%     end
+% end
+
+
+
+
+
+
+
+
+function [RTN_N] = inertial2rtn(x_N)
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Purpose: Produce DCM from inertial to RTN
+%
+% Assumptions:
+%
+% Inputs:
+%   x_N         position and velocity of the true vehicle
+%
+% Output:
+%   RTN_N       DCM that defines the rotation from the inertial frame to
+%                   the radial, tranverse, normal frame
+%
+% Author: Rachel Mamich
+% Creater: 10/31/2023
+% Modified: 10/31/2023
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+r = x_N(1:3);
+v = x_N(4:6);
+raxis = r;
+raxis = raxis/norm(raxis);
+
+naxis = cross(r, v);
+naxis = naxis/norm(naxis);
+
+
+taxis = cross(naxis, raxis);
+taxis = taxis/norm(taxis);
+
+RTN_N = [raxis, taxis, naxis]';
+
+end

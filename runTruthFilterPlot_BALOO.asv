@@ -1,0 +1,305 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Run Truth Gen, Filter, and Plotting
+%
+%
+% Created: 11/07/22
+% Last Modified:3/31/25
+% Author: Rachel Mamich
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%house keeping
+clear
+close all
+
+
+%% Main Simulation Flags
+% flagScenario ='EarthRel_gravDiff_burnRendezvous_meanAdjust_smallerBuff';%_meanAdjust_sub';%'EarthRel_procNoise_burnRendezvous';% 'EarthRel_gravDiff';%  _fixedQ_biggerQ % 'EarthRel_Venting'; % 'EarthRel_procNoise_burnRendezvous'; %  %'EarthRel_procNoise';%x_burnRendezvous_fixedQ_biggerQ   _fixedQ_biggerQ'; % '; % 'EarthRel_procNoise'; % 'EarthRel_Venting'; % ; % 'EarthRel_procNoise_burnRendezvous'; % 'EarthRel_Venting_lowerRW'; % 'EarthRel_procNoise'; %; %_noVWR 'EarthRel_Venting'; % Determiines which IC file to run 'EarthRel_procNoise_burnRendezvous' % _burnRendezvous_noProcNoise
+% 'EarthRel_gravDiff_burnRendezvous_meanAdjust_sub_tryingSomething'
+% flagScenario ='EarthRel_gravDiff_burnRendezvous_BALOO_newAccel_halfWatBack';%_oneSecBack'; %_halfWatBack'; %_tryingSomething _new _tryingSomething _tryingSomething  _halfWatBack  _allTheWayBack
+% flagScenario ='EarthRel_gravDiff_burnRendezvous_fixed_BALOOnoMILTON';
+% flagScenario = 'NRHO_Venting_RelNav_nonDim'; % _direct
+% flagScenario = 'EarthRel_Venting_BALOO';
+% flagScenario = 'EarthRel_gravDiff'; %
+% flagScenario ='EarthRel_gravDiff_burnRendezvous_fixedQ_biggerQ';
+% flagScenario = 'EarthRel_gravDiff';
+% flagScenario = 'NRHO_Venting_RelNav_nonDim_BALOO_differentRw';
+% flagScenario = 'NRHO_RelNav_nonDim_burnRendezvous_fixed_BALOO';
+
+% flagScenario ='EarthRel_gravDiff_burnRendezvous_BALOO_biggerBurn';
+% flagScenario ='EarthRel_venting_burnRendezvous_BALOO_newTuning';
+
+% flagScenario ='EarthRel_venting_burnRendezvous_BALOO';
+% flagScenario ='EarthRel_venting_burnRendezvous_fixed_interacting';
+% flagScenario ='EarthRel_venting_burnRendezvous_fixed_interacting_2modelsNoiseDifference';
+
+% flagScenario = 'NRHO_RelNav_nonDim_burnRendezvous_venting_bigManeuver_BALOO';
+% flagScenario = 'NRHO_RelNav_nonDim_burnRendezvous_BALOO_long';
+
+
+% flagScenario ='EarthRel_gravDiff_burnRendezvous_fixed_interactingBALOOnoMILTON';
+% flagScenario ='EarthRel_gravDiff_burnRendezvous_fixed_interacting';
+% flagScenario ='EarthRel_gravDiff_burnRendezvous_fixed_interacting_2modelsNoiseDifference';
+
+flagScenario = 'NRHO_RelNav_nonDim_burnRendezvous_venting_BALOO_more';
+% flagScenario = 'NRHO_RelNav_nonDim_burnRendezvous_fixed_interactingBALOOnoMILTON'; % Does not work -- mechanically works, but impossible to tune 
+% flagScenario = 'NRHO_RelNav_nonDim_burnRendezvous_venting_fixed_interacting'; 
+% flagScenario = 'NRHO_RelNav_nonDim_burnRendezvous_venting_fixed_interacting_2modelsNoiseDifference';
+% flagScenario = 'NRHO_RelNav_nonDim_burnRendezvous_bigManeuver_fixed_interacting_2modelsNoiseDifference';
+flagSetFlags = false;                                       % Flag to clear all or not for subscripts -- it's existence means all subsequent scripts DO NOT clear before running
+runTruthGen = false;                                         % true runf truth generation scripts, false supresses this call and uses .mat files if they exist for scripts downstream 
+runMC = false;                                               % true runs the filter, false supresses the call and uses .mat files if they exist for plotting
+plotMC = true;                                              % true calls plotting script, if false, no plots from the filter will be generated
+getStats = false;
+saveFig = false;                                            % Saves plots when true
+flagPlotFrame = 'N';                                      % plotting frame 'rtn' for radial, transverse, normal, or 'N' for inertial
+
+
+flagGenCellsForPlotting = true;
+
+
+
+
+%% Plotting Flags
+flagPlotTitle = true;                                       % true to include plot title 
+plotCheck = false;                                          % plots created from truth data as a check 
+baseFilepath = fullfile('.', 'Figures');                    % Sets base file path for Figure saving
+baseName = 'simpleSim';                                     % Sets base name for Figure saving
+timeUnit = '[s]';                                           % Sets time units for plotting
+angUnit = '[deg]';                                          % Sets angular units for plotting
+distUnit = '[km]';                                          % Sets linear distance units for plotting
+plotStates = true;                                                    % Sets flag to plot MC for states or not
+flagCovPlotOff = false;                                     % Truns cov plotting Cov on when false
+plotMeas = true;                                            % true plots measurements
+fontSize = 38;                                              % Sets font size for plotting script plots
+line_width = 4;                                             % Sets line width for plotting script plots
+textInterpreter = 'latex';                                  % Sets text interpreter for plotting script plots
+axesLineWidth = 2;                                          % Sets axes width for plotting script plots
+gridLineWidth = 1;                                          % Sets grid line width for plotting script plots
+markerSize = 15;                                             % Sets marker size for plotting script plots
+set(0, 'DefaultTextInterpreter', 'latex')                   % Sets text interpreter for plotting script plots
+set(0, 'DefaultLegendInterpreter', 'latex')                 % Sets text interpreter for plotting script plots
+set(0, 'DefaultTextFontSize', fontSize)                     % Sets font size for plotting script plots
+set(0, 'DefaultLineLineWidth', line_width)                  % Sets line width for plotting script plots
+set(0, 'DefaultAxesTickLabelInterpreter', textInterpreter)  % Sets text interpreter for plotting script plots
+% flagZoomSave = 'zoomAll';                                   % Sets x limits for plotting script plots -- 'none' is default, 'zoomAll' enforces both limits, 'zoomEnd' enforces the upper limit
+% xlimSet = [1000, 3000]; % NRHO post burn window 
+flagZoomSave = 'zoomEnd';
+% xlimSet = [100, 300]; % NRHO burn window 
+xlimSet = [300, 530]; % NRHO burn window
+
+% TODO: Add this flag to all scenario IC files
+% New Flag for vBar compensation w/o accel state
+flagCompensateMean = false;
+%% Call Truth
+
+if contains(flagScenario, 'Earth')
+    if contains(flagScenario, 'Rendezvous')
+        if contains(flagScenario, 'lagerBuff')
+            IC_dualBurnRendezvous_largeBuffer;
+        elseif contains(flagScenario, 'gravDiff')
+            if contains(flagScenario, 'vBarAdjust')
+                IC_dualBurnRendezvous_gravDiff_noAccelState_vBar;
+            elseif contains(flagScenario, 'fixed')
+                if contains(flagScenario, 'interacting')
+                    if contains(flagScenario, 'BALOO')
+                        IC_dualBurnRendezvous_gravDiff_InteractingBALOOnoMILTON;
+                    else
+                        if contains(flagScenario, '2modelsNoiseDifference')
+                            IC_dualBurnRendezvous_gravDiff_fixed_interacting_2modelsNoise;
+                        else
+                            IC_dualBurnRendezvous_gravDiff_fixed_interacting;
+                        end
+                    end
+                else
+                    IC_dualBurnRendezvous_gravDiff_BALOOnoMILTON;
+                end
+            else
+                IC_dualBurnRendezvous_gravDiff_BALOO;
+            end
+        elseif contains(flagScenario, 'venting')
+            if contains(flagScenario, 'interacting')
+                if contains(flagScenario, '2modelsNoiseDifference')
+                    IC_dualBurnRendezvous_venting_fixed_interacting_2;
+                else
+                    IC_dualBurnRendezvous_venting_fixed_interacting;
+                end
+            else
+                IC_dualBurnRendezvous_venting_BALOO;
+            end
+            
+        else
+            if contains(flagScenario, 'fixed')
+                IC_dualBurnRendezvous_plainEKF;
+            else
+                IC_dualBurnRendezvous;
+            end
+            
+        end
+    elseif contains(flagScenario, 'Venting')
+        if ~contains(flagScenario, 'BALOO')
+            IC_venting;
+        else
+            IC_venting_BALOO;
+        end
+    elseif contains(flagScenario, 'PeriodSet')
+        IC_procNoiseOnly;
+    elseif contains(flagScenario, 'longerBuffer')
+        IC_procNoiseOnly_longerBuffer;
+    elseif contains(flagScenario, 'gravDiff')
+        if contains(flagScenario, 'fixed')
+            IC_gravDiff_plainEKF_BALOO
+        else
+            IC_gravDiff_BALOO;
+        end
+    else
+        IC_procNoiseOnly;
+    end
+else
+    if contains(flagScenario, 'nonDim')
+        if contains(flagScenario, 'direct')
+            IC_NRHOVenting_nonDim_directMeas;
+        elseif contains(flagScenario, 'Rendezvous')
+            if contains(flagScenario, 'fixed')
+                if contains(flagScenario, 'interacting')
+                    if contains(flagScenario, '2modelsNoiseDifference')
+                        if contains(flagScenario, 'vent')
+                            IC_NRHODualBurnRendezvous_nonDim_fixed_interacting_2_vent;
+                        else
+                            IC_NRHODualBurnRendezvous_nonDim_fixed_interacting_2modelsNoise;
+                        end
+                    elseif contains(flagScenario, 'BALOO')
+                        IC_NRHODualBurnRendezvous_nonDim_InteractingBALOOnoMILTON;
+                    else
+                        if contains(flagScenario, 'venting')
+                            IC_NRHODualBurnRendezvous_nonDim_fixed_vent_interacting;
+                        else
+                            IC_NRHODualBurnRendezvous_nonDim_fixed_interacting;
+                        end
+                    end
+                else
+                    IC_NRHODualBurnRendezvous_nonDim_BALOOnoMILTON;
+                end
+            else
+                if contains(flagScenario, 'bigManeuver')
+                    IC_NRHODualBurnRendezvous_biggerBurn_nonDim_BALOO;
+                elseif contains(flagScenario, 'venting')
+                    IC_NRHODualBurnRendezvousVenting_nonDim_BALOO;
+                else
+                    IC_NRHODualBurnRendezvous_nonDim_BALOO;
+                end
+                % iiTruth = 1;
+                % NRHORendezvous_Scratch_keepitNonDim;
+            end
+            iiTruth = 1;
+            if contains(flagScenario, 'venting')
+                NRHORendezvous_Scratch_BiggerBurn_keepitNonDim;
+            else 
+                NRHORendezvous_Scratch_keepitNonDim;
+            end
+        elseif contains(flagScenario, 'fixed')
+            IC_NRHOVenting_nonDim_plainEKF;
+        elseif contains(flagScenario, 'Venting')
+            IC_NRHOVenting_nonDim;
+        else
+            IC_NRHOVenting_nonDim_BALOO;
+        end
+    else
+        IC_NRHOVenting;
+    end
+end
+
+if nMCTruth > 1
+    nMC = 1;
+end
+
+
+for iiTruth = firstPlot:nMCTruth
+    warning('off','all');
+    if runTruthGen
+        if contains(flagScenario, 'Earth')
+            if contains(flagScenario, 'procNoise')
+                if contains(flagScenario, 'burn')
+                    if contains(flagScenario, 'Rendezvous')
+                        Earth_ConstQ_DualBurnRendezvous
+                    else
+                        Earth_ConstQ_burns
+                    end
+                elseif contains(flagScenario, 'PeriodSet')
+                    Earth_ConstQ_PeriodSet;
+                else
+                    Earth_ConstQ;
+                end
+            elseif contains(flagScenario, 'Rendezvous')
+                if contains(flagScenario, 'gravDiff')
+                    Earth_NoQ_DualBurnRendezvous;
+                else
+                    Earth_Venting_DualBurnRendezvous_scratch;
+                    EarthOrbitVenting
+                end
+
+            elseif contains(flagScenario, 'Venting')
+                EarthVenting_scratch;
+                EarthOrbitVenting;
+            elseif contains(flagScenario, 'gravDiff')
+                Earth_gravDiff;
+            else
+                simpleCM_Earth;
+            end
+        elseif contains(flagScenario, 'Erros')
+            simpleCMSim;
+        else
+            if contains(flagScenario, 'nonDim')
+                if contains(flagScenario, 'fixed')
+                    if ~contains(flagScenario, 'Rendezvous')
+                        NRHO_Scratch_keepitNonDim_zeroVOutVents;
+                    else
+                        if contains(flagScenario, 'venting')
+                            NRHORendezvous_Scratch_BiggerBurn_keepitNonDim;
+                        else
+
+                            NRHORendezvous_Scratch_keepitNonDim;
+                        end
+                    end
+                    % NRHOVenting_nonDim;
+                elseif contains(flagScenario, 'Rendezvous')
+                    if contains(flagScenario, 'venting')
+                        NRHORendezvous_Scratch_BiggerBurn_keepitNonDim;
+                    end
+                elseif contains(flagScenario, 'Venting')
+                    NRHOVenting_Scratch_keepitNonDim; % randomize vents
+                    % NRHOVenting_nonDim;
+                end
+                NRHOVenting_nonDim;
+            else
+                NRHOVenting;
+            end
+        end
+    end
+
+    % tic
+    if runMC
+        runFilterMC_BALOO;
+    end
+    % time41 = toc;
+    % fprintf('Takes %0.3f s to run 1 run\n', time41)
+end
+
+if nMCTruth > 1
+    nMC = nMCTruth;
+end
+
+if plotMC
+    fprintf('Running Plotting Tool\n')
+    MCplotNew;
+end
+
+if getStats
+    fprintf('Running Gen Stats\n')
+    genMaxAvgStats;
+end
+
+
+clear flagSetFlags
+
+% load gong.mat
+% sound(y)
+
