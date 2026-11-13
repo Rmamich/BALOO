@@ -1,0 +1,709 @@
+% saveFig = false;                                   % Saves plots when true
+% baseFilepath = fullfile('.', 'Figures');          % Sets base file path for Figure saving 
+% baseName = 'simpleSim';                           % Sets base name for Figure saving
+% timeUnit = '[m]';                                 % Sets time axis to be in hours when plotting
+% flagAccel = false;                                % adds acceleration to state when true 
+% flagSampleInit = false;                            % Samples from initial distribution when true 
+% flagJ2 = true;                                    % Turns on J2 for propagation when true 
+% flagCentralBody = 'Earth'; % 'Erros';             % Sets central body for sim you want to run 
+% flagZeroQ = true;                                 % Zeros process noise when true
+% flagTruthMeas = true;                             % Passes filter truth measurments when true 
+% flagRunMeasUpdate = true;                         % Runs the measurment update when true
+% fileBase = fullfile('.', 'MAT', flagCentralBody); % Sets base file path for Figure .mat file read in 
+% flagConsider =  true(1, 6); %[true, true,  false(1, 4)]; % Sets parameters to be consider parameters when true (lumps all 3 components together (pos, vel, accel) false(6, 1); %
+
+%% Load in Truth and Measurment Data
+% load(fullfile(fileBase, 'truthState.mat'))
+% load(fullfile(fileBase, 'meas_.mat'))
+% load(fullfile(fileBase, 'truemeas.mat'))
+% load(fullfile(fileBase, 'groundFeatIndex.mat'))
+% load(fullfile(fileBase, 'acaf2aci.mat'))
+% load(fullfile(fileBase, 'aci2body1CF1.mat'))
+% load(fullfile(fileBase, 'aci2body1CF2.mat'))
+% load(fullfile(fileBase, 'aci2body2CF1.mat'))
+% load(fullfile(fileBase, 'aci2body2CF2.mat'))
+% load(fullfile(fileBase, 'timeMat.mat'))
+% load(fullfile(fileBase, 'burnHist.mat'))
+% load(fullfile(fileBase, 'Rmat.mat'))
+% load(fullfile(fileBase, 'Hmat.mat'))
+% load(fullfile(fileBase, 'featureSet.mat'));
+% 
+% x_rc = truthState(:, 1);
+% 
+% RCF1_N = RCF1_Body2_N(:, :, 1);
+% RCF2_N = RCF2_Body2_N(:, :, 1);
+% RN_rot = RN_rot(:, :, 1);
+% L = L_set(:, 1);
+
+% %% test target bearing H 
+% [ynom, Hanalitical] = pinHoleOpticalMeas_target(x, RCF_N);
+% 
+% nx = length(x);
+% dx = [1 1 1, .01 .01 .01, .0001 .0001 .0001, 1 1 1, .01 .01 .01, .0001 .0001 .0001]'/100;
+% 
+% Hnumerical = 0*Hanalitical;
+% for ix=1:nx
+%     xp = x;
+%     xp(ix) = xp(ix)+dx(ix);
+%     [yp, dummy] = pinHoleOpticalMeas_target(xp, RCF1_N);
+% %     xm = x;
+% %     xm(ix) = xm(ix)-dx(ix);
+% %     ym = pinHoleOpticalMeas_target(xm, RCF_N);
+%     Hnumerical(:,ix) = (yp-ynom)/dx(ix);
+% end
+% Hnumerical, Hanalitical
+% 
+% %% test feature tracking H
+% [ynom, Hanalitical] = pinHoleOpticalMeas_groundFeature(x, RCF2_N, RN_rot, L);
+% 
+% nx = length(x);
+% dx = [1 1 1, .01 .01 .01, .0001 .0001 .0001, 1 1 1, .01 .01 .01, .0001 .0001 .0001]'/100;
+% 
+% Hnumerical = 0*Hanalitical;
+% for ix=1:nx
+%     xp = x;
+%     xp(ix) = xp(ix)+dx(ix);
+%     [yp, dummy] = pinHoleOpticalMeas_groundFeature(xp, RCF2_N, RN_rot, L);
+% %     xm = x;
+% %     xm(ix) = xm(ix)-dx(ix);
+% %     ym = pinHoleOpticalMeas_target(xm, RCF_N);
+%     Hnumerical(:,ix) = (yp-ynom)/dx(ix);
+% end
+% Hnumerical, Hanalitical
+% 
+% 
+%% test range/ range rate H
+% x_rc = [-60.7492726937428;
+%           688.226659523253;
+%           2935.93019617934;
+%         -0.547453635729847;
+%        -0.0301222473224702;
+%         -0.075508780318665;
+%         0; 0; 0;
+%          -6916109.07377746;
+%          -236252.768396689;
+%           11773.1662260736;
+%          -2.49490407052605;
+%           992.673884654639;
+%           7523.01290548444;
+%           0; 0; 0];
+% RCF1_N = rotx(42)*roty(21)*rotz(32);
+% RCF2_N = rotx(73)*roty(21)*rotz(32);
+% RN_rot = rotz(42.5);
+% [ynom, Hanalitical] = relNavRng_opTarget_meas_H(x_rc, RCF1_N, [9, 9]);
+% 
+% nx = length(x);
+% dx = [1 1 1, .01 .01 .01, .0001 .0001 .0001, .0001 .0001 .0001, .000001 .000001 .000001, .00000001 .00000001 .00000001]'/100;
+% 
+% Hnumerical = 0*Hanalitical;
+% for ix=1:nx
+%     xp_rc = x_rc;
+%     xp_rc(ix) = xp_rc(ix)+dx(ix);
+%     [yp, dummy] = relNavRng_opTarget_meas_H(xp_rc, RCF1_N, accelFlag);
+% %     xm = x;
+% %     xm(ix) = xm(ix)-dx(ix);
+% %     ym = pinHoleOpticalMeas_target(xm, RCF_N);
+%     Hnumerical(:,ix) = (yp-ynom)/dx(ix);
+% end
+% temp = Hnumerical-Hanalitical;
+% 
+
+
+%% Test Hessians for range and azEl
+% x_rc = [-60.7492726937428;
+%           688.226659523253;
+%           2935.93019617934;
+%         -0.547453635729847;
+%        -0.0301222473224702;
+%         -0.075508780318665;
+%         0; 0; 0;
+%          -6916109.07377746;
+%          -236252.768396689;
+%           11773.1662260736;
+%          -2.49490407052605;
+%           992.673884654639;
+%           7523.01290548444;
+%           0; 0; 0];
+% RCF1_N = rotx(42)*roty(21)*rotz(32);
+% 
+% nx = length(x_rc);
+% dx = [1 1 1, .01 .01 .01, .0001 .0001 .0001, .0001 .0001 .0001, .000001 .000001 .000001, .00000001 .00000001 .00000001]'/1;
+% rhoFunc = @(rhoVec) (rhoVec(1)^2 + rhoVec(2)^2 + rhoVec(3)^2)^(1/2);
+% 
+% 
+% D_rho_numeric = FD2(x_rc,rhoFunc,dx(1));
+% D_rho_analytic = relNavRange_Hessian(x_rc);
+% D_azEl_numeric = FD2_azEl(x_rc, dx(1), RCF1_N);
+% D_azEl_analytic = relNavPinHoleOpticalMeas_target_Hessian(x_rc, RCF1_N);
+
+
+
+
+%% Test Hessian for states
+% x_rc = [-60.7492726937428;
+%           688.226659523253;
+%           2935.93019617934;
+%         -0.547453635729847;
+%        -0.0301222473224702;
+%         -0.075508780318665;
+%         0; 0; 0;
+%          -6916109.07377746;
+%          -236252.768396689;
+%           11773.1662260736;
+%          -2.49490407052605;
+%           992.673884654639;
+%           7523.01290548444;
+%           0; 0; 0];
+% 
+% RCF1_N = rotx(42)*roty(21)*rotz(32);
+% 
+% nx = length(x_rc);
+% dx = [1 1 1, .01 .01 .01, .0001 .0001 .0001, .0001 .0001 .0001, .000001 .000001 .000001, .00000001 .00000001 .00000001]'/1;
+% 
+% mu = 3.986004418000000e+14; % 3.986e5*(1e3)^3; % m^3/s^2
+% J2 = .0010826269;
+% RBody = 6378137;
+% 
+% [Hess_tbp_analytic, Hess_j2_analytic] = gravHess(x_rc(10:end), [mu, RBody, J2]);
+% 
+% Hess_tbpandJ2_numeric = FHess2_tbp_j2(x_rc(10:end), dx(1), [mu, RBody, J2], zeros(3, 1), eye(3), eye(3));
+% Hess_tbp_numeric = FHess2_tbp_j2(x_rc(10:end), dx(1), [mu, RBody, 0], zeros(3, 1), eye(3), eye(3));
+% Hess_J2_numeric = Hess_tbpandJ2_numeric - Hess_tbp_numeric;
+% 
+% Hdiff_tbp = (Hess_tbp_analytic - Hess_tbp_numeric(1:3, 1:3, 1:3));
+% Hdiff_j2 = (Hess_j2_analytic - Hess_J2_numeric(1:3, 1:3, 1:3));
+
+%% Ground feat included H
+% [ynom, Hanalitical] = relNavRngRngRate_opTarget_feature_meas_H(x, RCF1_N, RCF2_N, RN_rot, [0;0;0], true);
+% 
+% nx = length(x);
+% dx = [1 1 1, .01 .01 .01, .0001 .0001 .0001, .0001 .0001 .0001, .000001 .000001 .000001, .00000001 .00000001 .00000001]'/100;
+% 
+% Hnumerical = 0*Hanalitical;
+% for ix=1:nx
+%     xp = x;
+%     xp(ix) = xp(ix)+dx(ix);
+%     [yp, dummy] = relNavRngRngRate_opTarget_feature_meas_H(xp, RCF1_N, RCF2_N, RN_rot, [0;0;0],accelFlag);
+% %     xm = x;
+% %     xm(ix) = xm(ix)-dx(ix);
+% %     ym = pinHoleOpticalMeas_target(xm, RCF_N);
+%     Hnumerical(:,ix) = (yp-ynom)/dx(ix);
+% end
+% Hnumerical-Hanalitical
+
+
+
+%% Test A
+% dx = [1 1 1, .01 .01 .01, .0001 .0001 .0001, 1 1 1, .01 .01 .01, .0001 .0001 .0001]';
+% 
+% mu = 3.986004418000000e+14; % 3.986e5*(1e3)^3; % m^3/s^2
+% J2 = .0010826269;
+% J3 = 0;%  -0.0000025323;
+% J4 = 0; % -0.0000016204;
+% J5 = 0;  %-2.27753590730836e-7;
+% J6 = 0; % 5.40666576283813e-7;
+% J7 = 0; % -3.50551795713742e-7;
+% J8 = 0; % -2.03993125929884e-7;
+% 
+% RBody = 6378137; % 6378*1e3; % m
+% dt = 1;
+% gravParam = [mu, RBody, J2, 0, 0, 0, 0, 0, 0, 0]; % turn J2 on
+% beta = 1e-5;
+% 
+% % x(7:9) = 0.00001;
+% % x(16:18) = x(7:9);
+% % 
+% % temp = load('aeroegm2008.mat');
+% % Ccoeff = temp.C(1:12, 1:12); 
+% % Scoeff = temp.S(1:12, 1:12);
+% % 
+% % indexJ = 3;
+% % for i = 2:8
+% %     gravParam(indexJ) = -Ccoeff(indexJ, 1)/normalizationCoeff_Pi(i, 0);
+% %     indexJ = indexJ + 1;
+% % end
+% % 
+% % indexC = [2, 1];
+% % for i = 3:9
+% %     for j = 2:i
+% %         Ccoeff(i, j) = Ccoeff(i, j)/normalizationCoeff_Pi(indexC(1), indexC(2));
+% %         Scoeff(i, j) = Scoeff(i, j)/normalizationCoeff_Pi(indexC(1), indexC(2));
+% %         indexC(2) = indexC(2) + 1;
+% %     end
+% %     indexC(1) = indexC(1) + 1;
+% %     indexC(2) = 1;
+% % end
+% % Ccoeff = Ccoeff(2:9, 2:9);
+% % Scoeff = Scoeff(2:9, 2:9); 
+% % 
+% % [ xDotNom_7 ] = TBP_constantBurn( 0, x, gravParam, 1e-5, zeros(6, 1), 2, Ccoeff, Scoeff );
+% % [ xDotBuiltIn_7 ] = gravitySphericalHarmonicsEarth_constantBurn( 0, x, 8, 1e-5, zeros(6, 1), 2);
+% % 
+% % 
+% % diffxDot_7 = xDotNom_7 - xDotBuiltIn_7;
+% % percentDiffxDot_7 = (diffxDot_7./xDotBuiltIn_7)*100;
+% x_rc = [-60.7492726937428;
+%           688.226659523253;
+%           2935.93019617934;
+%         -0.547453635729847;
+%        -0.0301222473224702;
+%         -0.075508780318665;
+%         0; 0; 0;
+%          -6916109.07377746;
+%          -236252.768396689;
+%           11773.1662260736;
+%          -2.49490407052605;
+%           992.673884654639;
+%           7523.01290548444;
+%           0;0;0];
+% x_tc = x_rc;
+% x_tc(1:9) = x_rc(1:9) + x_rc(10:18);
+% nx = length(x_rc);
+% [ xDotNom ] = TBP_constantBurn( 0, x_tc, gravParam, 1e-5, zeros(6, 1), 2);
+% xDotNom(1:9) = xDotNom(1:9) - xDotNom(10:18);
+% 
+% 
+% % [Aanalitical_lowerLeft_chief] = gravJac(x_rc(1:9), gravParam);
+% % [Aanalitical_lowerLeft_deputy] = gravJac(x_rc(10:18), gravParam);
+% % 
+% % Aanalitical_chief = [zeros(3), eye(3), zeros(3);...
+% %     Aanalitical_lowerLeft_chief, zeros(3), eye(3);...
+% %     zeros(3, 6), -eye(3)*beta];
+% % Aanalitical_deputy = [zeros(3), eye(3), zeros(3);...
+% %     Aanalitical_lowerLeft_deputy, zeros(3), eye(3);...
+% %     zeros(3, 6), -eye(3)*beta];
+% 
+% % Aanalitical = blkdiag(Aanalitical_chief, Aanalitical_deputy);
+% 
+% [~, Aanalitical] = buildPhi(x_tc, gravParam, dt, beta, true);
+% Anumerical = 0*Aanalitical;
+% for ix=1:nx
+%     xp_rc = x_rc;
+%     xp_rc(ix) = xp_rc(ix)+dx(ix);
+%     xp_tc = xp_rc;
+%     xp_tc(1:9) = xp_rc(1:9) + xp_rc(10:18);
+%     [ xDotp_tc ] = TBP_constantBurn( 0, xp_tc, gravParam, 1e-5, zeros(6, 1), 2);
+%     xDotp_rc = xDotp_tc;
+%     xDotp_rc(1:9) = xDotp_tc(1:9) - xDotp_tc(10:18);
+% %     xm = x;
+% %     xm(ix) = xm(ix)-dx(ix);
+% %     ym = pinHoleOpticalMeas_target(xm, RCF_N);
+%     Anumerical(:,ix) = (xDotp_rc-xDotNom)/dx(ix);
+% end
+% diffA = Anumerical - Aanalitical;
+% 
+% 
+% for jx = 1:(nx/3)
+%     fprintf('rows: %d, %d, %d\n', (jx*3-2):jx*3)
+%     for ix = 1:(nx/3)
+%         fprintf('\t%0.5e, %0.5e, %0.5e\n\t%0.5e, %0.5e, %0.5e\n\t%0.5e, %0.5e, %0.5e\n\n', diffA((jx*3-2):jx*3, (ix*3-2):ix*3))
+%     end
+% end
+% 
+% 
+% function [Pi]= normalizationCoeff_Pi(L, m)
+% if m == 0
+%     k = 1.0;
+% else
+%     k = 2.0;
+% end
+% Pi = sqrt((factorial(L + m)) / (factorial((L - m))*k*(2*L + 1)));
+% end
+% 
+% 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+%% Test A for CRTBP
+clear all
+close all
+
+dx = [1 1 1, .01 .01 .01, .0001 .0001 .0001, 1 1 1, .01 .01 .01, .0001 .0001 .0001]';
+
+
+mu = 0.012150584270; % mass ratio from paper
+L = 384400; % km -- characteristic length 
+
+load(fullfile('./MAT/NRHOVentingScenario_nonDim/', 'truth_forwardBackward.mat'));
+load(fullfile('./MAT/NRHO_Venting_RelNav_nonDim/InitCovFactor/none/EKF', 'aci2body2CF1.mat'));
+PNondim = 1.511143593137; % period non dimensional from paper
+tCharacteristic = 3.751902619517e5; % s -- characteristic time from paper  
+
+tDim = PNondim*tCharacteristic; % dimensional period -- convert as nondimensional period * characteristic time 
+P = tDim; %
+n = 2*pi/P; % 1/s 
+% 0.001 rad/ n 
+ 
+
+tDim_prop = 8000; % my desired propagation time for MILTON
+tNondim = tDim_prop/tCharacteristic; % convert to nondimensional 
+
+idx = 1;
+
+timeDim = idx-1;
+timenonDim = timeDim/tCharacteristic;
+
+xt = truthState_N_new(1:9, 200);
+xc = truthState_N_new(10:18, 200);
+
+xt(7:9) = 0.001;
+xc(7:9) = xt(7:9);
+
+x = [xt; xc];
+eomTruth = @CRTBP_targetChaser;
+gravParam= [mu, L, n, tCharacteristic]; 
+beta = ones(3, 1)*1e-5; % 1/s
+% beta = [0, 1/3600, 0];
+beta_nonDim = beta*tCharacteristic; % nondim  % 1/s *s
+gate = 1e-7; % m/s/s
+gate_nonDim = gate/L/n/n; % [-]
+dt = 1;
+
+
+
+
+
+nx = length(x);
+
+
+%% Checking A in rotational nondim wrt rortational nondim
+% Test Passed :)
+x_nonDimR = nonDimRotational_dimInertial_conversion(x, timeDim, L, n, tCharacteristic, 'fullState_dimN2nondimR');
+[ xDotNom_nonDimR ] = eomTruth( timenonDim, x_nonDimR, gravParam, beta_nonDim, zeros(3, 1), [9, 9], gate_nonDim, eye(3), eye(3), zeros(3, 1), 0, 0);
+
+xt_nonDim = x_nonDimR(1:9);
+xc_nonDim = x_nonDimR(10:18);
+
+
+% CRTBP
+% Chaser
+Ac = zeros(9);
+Ac(1:3, 4:6) = eye(3);
+[dadr] = gravJac_CRTBP(xc_nonDim(1:3), gravParam);
+Ac(4:6, 1:3) = dadr;
+Ac(4:6, 4:6) = [0, 2, 0; -2, 0, 0; 0, 0, 0];
+
+Ac(7:9, 7:9) = -eye(3)*beta_nonDim(2);
+
+
+% dX_nonDimR_dX_dimN_c = dX_nonDimRot_dX_dimN(xc_nonDim, t, gravParam);
+% Ac = dX_nonDimR_dX_dimN_c*Ac*dX_nonDimR_dX_dimN_c';
+% Target
+At = zeros(9);
+At(1:3, 4:6) = eye(3);
+[dadr] = gravJac_CRTBP(xt_nonDim(1:3), gravParam);
+At(4:6, 1:3) = dadr;
+At(4:6, 4:6) = [0, 2, 0; -2, 0, 0; 0, 0, 0];
+
+At(4:6, 7:9) = eye(3);
+At(7:9, 7:9) = -eye(3)*beta_nonDim(1); % Assumes constant burn
+
+
+% Transform A by doing:
+% dX_dimN/dX_nonDimRot * A_nonDimRot * dX_dimN/dX_nonDimRot'
+% dX_nonDimR_dX_dimN_t = dX_nonDimRot_dX_dimN(xt, t, gravParam);
+% At = dX_nonDimR_dX_dimN_t*At*dX_nonDimR_dX_dimN_t';
+
+% [~, Aanalitical] = buildPhi(x_nonDimR, gravParam, dt, beta_nonDim, [9, 9], false, true, timenonDim);
+
+Aanalitical = [At, zeros(9); zeros(9), Ac];
+
+
+[Anumerical,z]=A_CRTBP_CSJ(timenonDim,x_nonDimR, gravParam, beta_nonDim, gate_nonDim);
+diffA = Anumerical - Aanalitical;
+
+
+% for jx = 1:(nx/3)
+%     fprintf('rows: %d, %d, %d\n', (jx*3-2):jx*3)
+%     for ix = 1:(nx/3)
+%         fprintf('\t%0.5e, %0.5e, %0.5e\n\t%0.5e, %0.5e, %0.5e\n\t%0.5e, %0.5e, %0.5e\n\n', diffA((jx*3-2):jx*3, (ix*3-2):ix*3))
+%     end
+% end
+% 
+% 
+% fprintf('\n\n\n\n\n\n\n\n\n\n\n\n\n\n')
+
+
+%% Check jacobian of rotational, nondim wrt inertial and dimensional
+% Test Passed :)
+dx_nonDim = [ones(3, 1)/L; ones(3, 1)*.01/L/n; ones(3, 1)*.0001/(1000*L)*tCharacteristic^2; ones(3, 1)/L; ones(3, 1)*.01/L/n; ones(3, 1)*.0001/(1000*L)*tCharacteristic^2]/1000000;
+
+
+dX_dimN_dX_nonDimR = dX_dimN_dX_nonDimRot(x_nonDimR, timeDim, gravParam);
+
+
+Aanalitical = dX_dimN_dX_nonDimR;
+
+
+inputFlag = 'R2N'; % inertial to rotational 
+[ xNom_N] = nonDimRotational_dimInertial_conversion(x_nonDimR, timeDim, L, n, tCharacteristic, inputFlag);
+
+Anumerical = 0*Aanalitical;
+for ix=1:9
+    xp_nonDim = x_nonDimR(1:9);
+    xp_nonDim(ix) = xp_nonDim(ix)+dx_nonDim(ix);
+    [ xp_nonDimR ] = nonDimRotational_dimInertial_conversion(xp_nonDim, timeDim, L, n, tCharacteristic, inputFlag);
+    Anumerical(:,ix) = (xp_nonDimR-xNom_nonDimR)/dx(ix);
+end
+
+
+
+
+
+diffA = Anumerical - Aanalitical;
+
+
+% for jx = 1:(9/3)
+%     fprintf('rows: %d, %d, %d\n', (jx*3-2):jx*3)
+%     for ix = 1:(9/3)
+%         fprintf('\t%0.5e, %0.5e, %0.5e\n\t%0.5e, %0.5e, %0.5e\n\t%0.5e, %0.5e, %0.5e\n\n', diffA((jx*3-2):jx*3, (ix*3-2):ix*3))
+%     end
+% end
+
+
+
+
+
+
+
+
+%% Check jacobian of rotational, nondim wrt inertial and dimensional
+% Test Passed :)
+[dX_nonDimR_dX_dimN] = dX_nonDimRot_dX_dimN(x(1:9), timeDim, gravParam);
+
+
+Aanalitical = dX_nonDimR_dX_dimN;
+
+
+inputFlag = 'N2R'; % inertial to rotational 
+[ xNom_nonDimR ] = nonDimRotational_dimInertial_conversion(x(1:9), timeDim, L, n, tCharacteristic, inputFlag);
+
+Anumerical = 0*Aanalitical;
+for ix=1:9
+    xp_Dim = x(1:9);
+    xp_Dim(ix) = xp_Dim(ix)+dx(ix);
+    [ xp_nonDimR ] = nonDimRotational_dimInertial_conversion(xp_Dim, timeDim, L, n, tCharacteristic, inputFlag);
+    Anumerical(:,ix) = (xp_nonDimR-xNom_nonDimR)/dx(ix);
+end
+
+
+
+
+
+diffA = Anumerical - Aanalitical;
+
+
+% for jx = 1:(9/3)
+%     fprintf('rows: %d, %d, %d\n', (jx*3-2):jx*3)
+%     for ix = 1:(9/3)
+%         fprintf('\t%0.5e, %0.5e, %0.5e\n\t%0.5e, %0.5e, %0.5e\n\t%0.5e, %0.5e, %0.5e\n\n', diffA((jx*3-2):jx*3, (ix*3-2):ix*3))
+%     end
+% end
+
+
+
+%% test target bearing H 
+RCF_N = RCF1_Body2_N(:, :, 200);
+[ynom, Hanalitical] = relNavRng_opTarget_meas_H(x_nonDimR, RCF_N, [9, 9]);
+
+nx = length(x_nonDimR);
+dx = [ones(3, 1)/L; ones(3, 1)*.01/L/n; ones(3, 1)*.0001/(1000*L)*tCharacteristic^2; ones(3, 1)/L; ones(3, 1)*.01/L/n; ones(3, 1)*.0001/(1000*L)*tCharacteristic^2]/1000000;
+
+Hnumerical = 0*Hanalitical;
+for ix=1:nx
+    xp = x_nonDimR;
+    xp(ix) = xp(ix)+dx(ix);
+    [yp, dummy] = relNavRng_opTarget_meas_H(xp, RCF_N, [9, 9]);
+%     xm = x;
+%     xm(ix) = xm(ix)-dx(ix);
+%     ym = pinHoleOpticalMeas_target(xm, RCF_N);
+    Hnumerical(:,ix) = (yp-ynom)/dx(ix);
+end
+% Hnumerical, Hanalitical;
+
+diffH = Hnumerical - Hanalitical;
+
+
+
+for ix = 1:3
+    fprintf('\t%0.5e, %0.5e, %0.5e \t%0.5e, %0.5e, %0.5e \t%0.5e, %0.5e, %0.5e \t\t\t%0.5e, %0.5e, %0.5e \t%0.5e, %0.5e, %0.5e \t%0.5e, %0.5e, %0.5e\n', diffH(ix, :))
+end
+
+
+
+
+
+
+
+%% Now Check it all together
+% % CRTBP_targetChaser(t, ic, gravParam, beta, accelerometer, n_perSat, gate, Rbody_N, RN_rot, bias_body, Ccoeff, Scoeff )
+% x_nonDimR = nonDimRotational_dimInertial_conversion(x, timeDim, L, n, tCharacteristic, 'fullState_dimN2nondimR');
+% [ xDotNom_nonDim ] = eomTruth( timenonDim, x_nonDimR, gravParam, beta_nonDim, zeros(3, 1), [9, 9], gate_nonDim, eye(3), eye(3), zeros(3, 1), 0, 0);
+% xDotNom_Dim = nonDimRotational_dimInertial_conversion([xDotNom_nonDim; x_nonDimR([1:3, 10:12])], timeDim, L, n, tCharacteristic, 'fullStateDot_nondimR2dimN');
+% 
+% 
+% 
+% xDotNom_Dim(1:6) = xDotNom_Dim(1:6) - xDotNom_Dim(10:15);
+% 
+% 
+% 
+% [~, Aanalitical] = buildPhi(x, gravParam, dt, beta_nonDim, [9, 9], true, true, timeDim);
+% 
+% [Anumerical,z]=A_CRTBP_CSJ_dimInertial(timenonDim,x, gravParam, beta_nonDim, gate_nonDim);
+% % Anumerical = 0*Aanalitical;
+% % for ix=1:nx
+% %     xp_tc = x;
+% %     xp_tc(ix) = xp_tc(ix)+dx(ix);
+% %     xp_rc = xp_tc;
+% %     xp_rc(1:6) = xp_tc(1:6) - xp_tc(10:15);
+% %     xp_tc = nonDimRotational_dimInertial_conversion(xp_tc, timeDim, L, n, tCharacteristic, 'fullState_dimN2nondimR');
+% %     [ xDotp_tc ] = eomTruth( timenonDim, xp_tc, gravParam, beta_nonDim, zeros(3, 1), [9, 9], gate_nonDim, eye(3), eye(3), zeros(3, 1), 0, 0);
+% %     % [ xDotNom ] = eomTruth( timenonDim, x, gravParam, beta_nonDim, zeros(3, 1), [9, 9], gate_nonDim, eye(3), eye(3), zeros(3, 1), 0, 0);
+% %     xDotp_tc_Dim = nonDimRotational_dimInertial_conversion([xDotp_tc; xp_tc([1:3, 10:12])], timeDim, L, n, tCharacteristic, 'fullStateDot_nondimR2dimN');
+% %     xDotp_rc_Dim = xDotp_tc_Dim;
+% %     xDotp_rc_Dim(1:6) = xDotp_tc_Dim(1:6) - xDotp_tc_Dim(10:15);
+% % 
+% %     Anumerical(:,ix) = (xDotp_rc_Dim-xDotNom_Dim)/dx(ix);
+% % end
+% diffA = Anumerical - Aanalitical;
+% 
+% 
+% for jx = 1:(nx/3)
+%     fprintf('rows: %d, %d, %d\n', (jx*3-2):jx*3)
+%     for ix = 1:(nx/3)
+%         fprintf('\t%0.5e, %0.5e, %0.5e\n\t%0.5e, %0.5e, %0.5e\n\t%0.5e, %0.5e, %0.5e\n\n', diffA((jx*3-2):jx*3, (ix*3-2):ix*3))
+%     end
+% end
+
+
+
+
+
+%% Finite Difference for azEl Hessians
+%Finite Difference second derivative
+function deriv2 = FD2_azEl(x,h, RCF_N)
+%assumes fun output is scalar or vector valued
+%find dimensions
+n = length(x);
+[funEvalC, ~] = relNavPinHoleOpticalMeas_target(x, RCF_N);
+N = length(funEvalC);
+
+deriv2 = zeros(n,n, N);
+
+for kk = 1:N
+    for ii = 1:n
+        dx1 = zeros(n,1);
+        dx1(ii) = h;
+        for jj = 1:n
+            dx2 = zeros(n,1);
+            dx2(jj) = h;
+            [funEvalFF, ~] = relNavPinHoleOpticalMeas_target(x + dx1 + dx2, RCF_N);
+            [funEvalFB, ~] = relNavPinHoleOpticalMeas_target(x + dx1 - dx2, RCF_N);
+            [funEvalBF, ~] = relNavPinHoleOpticalMeas_target(x - dx1 + dx2, RCF_N);
+            [funEvalBB, ~] = relNavPinHoleOpticalMeas_target(x - dx1 - dx2, RCF_N);
+            
+            
+            deriv2(jj,ii, kk) = (funEvalFF(kk) - funEvalFB(kk) - funEvalBF(kk) + funEvalBB(kk))/(4*h^2);
+        end
+    end
+end
+end
+
+
+
+
+function deriv2 = FHess2_tbp_j2(x,h, gravParam, betas, Rbody_N, RN_rot)
+%assumes fun output is scalar or vector valued
+%find dimensions
+n = length(x);
+[funEvalC] = tbpJ2_accelerometerGating_rpod_lidarBias_GSKF( [0, 1], [x;x], gravParam, betas, [0; 0; 0], [9, 9], 1e-3, Rbody_N, RN_rot, [0; 0; 0], 0, 0);
+N = length(funEvalC);
+
+deriv2 = zeros(n,n, N);
+
+for kk = 1:N
+    for ii = 1:n
+        dx1 = zeros(n,1);
+        dx1(ii) = h;
+        for jj = 1:n
+            dx2 = zeros(n,1);
+            dx2(jj) = h;
+            [funEvalFF] = tbpJ2_accelerometerGating_rpod_lidarBias_GSKF( [0, 1], [x + dx1 + dx2; x + dx1 + dx2], gravParam, betas, [0; 0; 0], [9, 9], 1e-3, Rbody_N, RN_rot, [0; 0; 0], 0, 0);
+            [funEvalFB] = tbpJ2_accelerometerGating_rpod_lidarBias_GSKF( [0, 1], [x + dx1 - dx2; x + dx1 - dx2], gravParam, betas, [0; 0; 0], [9, 9], 1e-3, Rbody_N, RN_rot, [0; 0; 0], 0, 0);
+            [funEvalBF] = tbpJ2_accelerometerGating_rpod_lidarBias_GSKF( [0, 1], [x - dx1 + dx2; x - dx1 + dx2], gravParam, betas, [0; 0; 0], [9, 9], 1e-3, Rbody_N, RN_rot, [0; 0; 0], 0, 0);
+            [funEvalBB] = tbpJ2_accelerometerGating_rpod_lidarBias_GSKF( [0, 1], [x - dx1 - dx2; x - dx1 - dx2], gravParam, betas, [0; 0; 0], [9, 9], 1e-3, Rbody_N, RN_rot, [0; 0; 0], 0, 0);
+            
+            
+            deriv2(jj,ii, kk) = (funEvalFF(kk) - funEvalFB(kk) - funEvalBF(kk) + funEvalBB(kk))/(4*h^2);
+        end
+    end
+end
+end
+
+
+function [A,z]=A_CRTBP_CSJ(tnonDim,x_nonDimR, gravParam, beta_nonDim, gate_nonDim)
+% Complex step Jacobian
+z=CRTBP_targetChaser( tnonDim, x_nonDimR, gravParam, beta_nonDim, zeros(3, 1), [9, 9], gate_nonDim, eye(3), eye(3), zeros(3, 1), 0, 0);                     % function value
+n=numel(x_nonDimR);                     % size of independent
+m=numel(z);                     % size of dependent
+A=zeros(m,n);                   % allocate memory for the Jacobian matrix
+h=n*eps;                        % differentiation step size
+for k=1:n                       % loop for each independent variable 
+    x1=x_nonDimR;                       % reference point
+    x1(k)=x1(k)+h*1i;            % increment in kth independent variable
+    A(:,k)=imag(CRTBP_targetChaser( tnonDim, x1, gravParam, beta_nonDim, zeros(3, 1), [9, 9], gate_nonDim, eye(3), eye(3), zeros(3, 1), 0, 0))/h;     % complex step differentiation 
+end
+end
+
+
+
+function [A,z_nonDim]=A_CRTBP_CSJ_dimInertial(tnonDim,x_Dim, gravParam, beta_nonDim, gate_nonDim)
+% Complex step Jacobian
+L = gravParam(2); % m
+n = gravParam(3); % 1/s
+tCharacteristic = gravParam(4); % s
+timeDim = tnonDim*tCharacteristic; % s
+x_nonDimR = nonDimRotational_dimInertial_conversion(x_Dim, timeDim, L, n, tCharacteristic, 'fullState_dimN2nondimR');
+z_nonDim=CRTBP_targetChaser( tnonDim, x_nonDimR, gravParam, beta_nonDim, zeros(3, 1), [9, 9], gate_nonDim, eye(3), eye(3), zeros(3, 1), 0, 0);                     % function value
+% z_Dim = nonDimRotational_dimInertial_conversion(z_nonDim, timeDim, L, n, tCharacteristic, 'fullStateDot_nondimR2dimN');
+n=numel(x_nonDimR);                     % size of independent
+m=numel(z_nonDim);                     % size of dependent
+A=zeros(m,n);                   % allocate memory for the Jacobian matrix
+h=n*eps;                        % differentiation step size
+for k=1:n                       % loop for each independent variable 
+    x1_Dim=x_Dim;                       % reference point
+    x1_Dim(k)=x1_Dim(k)+h*1i;            % increment in kth independent variable
+    x1_nonDim = nonDimRotational_dimInertial_conversion(x1_Dim, timeDim, L, n, tCharacteristic, 'fullState_dimN2nondimR');
+    zp_nonDim = CRTBP_targetChaser( tnonDim, x1_nonDim, gravParam, beta_nonDim, zeros(3, 1), [9, 9], gate_nonDim, eye(3), eye(3), zeros(3, 1), 0, 0);
+    zp_Dim = nonDimRotational_dimInertial_conversion([zp_nonDim; x1_Dim([1:3, 10:12])], timeDim, L, n, tCharacteristic, 'fullStateDot_nondimR2dimN');
+    A(:,k)=imag(zp_Dim)/h;     % complex step differentiation 
+end
+end
+
+
+
+
+function [A,z]=H_azEl_CSJ(x_nonDimR, RCF_N)
+% Complex step Jacobian
+z=pinHoleOpticalMeas_target(x_nonDimR, RCF_N);                     % function value
+n=numel(x_nonDimR);                     % size of independent
+m=numel(z);                     % size of dependent
+A=zeros(m,n);                   % allocate memory for the Jacobian matrix
+h=n*eps;                        % differentiation step size
+for k=1:n                       % loop for each independent variable 
+    x1=x_nonDimR;                       % reference point
+    x1(k)=x1(k)+h*1i;            % increment in kth independent variable
+    A(:,k)=imag(pinHoleOpticalMeas_target(x1, RCF_N))/h;     % complex step differentiation 
+end
+end
